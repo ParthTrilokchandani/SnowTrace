@@ -1,8 +1,22 @@
 # SnowTrace
 
+<p align="center">
+  <img src="snow-trace.png" alt="Agent P - Recon Scout" width="480"/>
+</p>
+
 **Cyber triage toolkit for Windows and Linux incident response.**
 
+<p align="center">
+  <b>Version 1.0</b> · Created by <b>Agent P</b><br/>
 SnowTrace collects forensic artifacts from a potentially compromised system and runs them through a browser-based analysis engine that flags indicators of compromise (IOCs), ranked by severity, with remediation playbooks for each finding.
+</p>
+---
+
+<p align="center">
+  <b>DISCLAIMER: This tool is for AUTHORIZED security testing and educational purposes ONLY.</b><br/>
+  Unauthorized scanning of systems you do not own or have explicit written permission to test is
+  illegal. Always obtain written authorization before conducting any reconnaissance.
+</p>
 
 ---
 
