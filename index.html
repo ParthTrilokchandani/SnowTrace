@@ -46,8 +46,8 @@
         exfiltration, and attacker tooling.
       </div>
       <div class="stat-row">
-        <div class="stat-box"><div class="stat-num">15+</div><div class="stat-label">Check Categories</div></div>
-        <div class="stat-box"><div class="stat-num">60+</div><div class="stat-label">IOC Rules</div></div>
+        <div class="stat-box"><div class="stat-num">25+</div><div class="stat-label">Check Categories</div></div>
+        <div class="stat-box"><div class="stat-num">100+</div><div class="stat-label">IOC Rules</div></div>
         <div class="stat-box"><div class="stat-num">2</div><div class="stat-label">Platforms</div></div>
         <div class="stat-box"><div class="stat-num">4</div><div class="stat-label">Severity Levels</div></div>
       </div>
@@ -63,16 +63,16 @@
         <ul class="feature-list">
           <li>Running processes with path &amp; signature validation</li>
           <li>Active network connections and unusual ports</li>
-          <li>Persistence: registry run keys, WMI, cron, systemd</li>
+          <li>Persistence: registry run keys, WMI, LSA packages, boot execute, cron, systemd</li>
           <li>Scheduled tasks and services with suspicious actions</li>
           <li>User accounts, new admin additions, SSH keys</li>
           <li>PowerShell / bash history for malicious patterns</li>
-          <li>SUID/SGID files and world-writable directories</li>
-          <li>Security events: failed logins, account creation</li>
-          <li>Recently modified files in sensitive locations</li>
+          <li>SUID/SGID files, capabilities, and world-writable directories</li>
+          <li>Security events: failed logins, account creation, log clearing</li>
+          <li>Prefetch, shadow copies, RDP artifacts, USB device history</li>
           <li>Windows Defender / AV status and recent detections</li>
-          <li>DNS cache and suspicious /etc/hosts entries</li>
-          <li>Loaded kernel modules (rootkit indicators)</li>
+          <li>ld.so.preload, PAM backdoors, shell profile tampering</li>
+          <li>Crypto miner detection, package integrity, process memory maps</li>
         </ul>
       </div>
       <div class="card">
@@ -135,14 +135,14 @@
         </div>
         <div class="dl-body">
           <ul class="dl-items">
-            <li>Processes, network connections, DNS cache</li>
-            <li>Registry run keys, scheduled tasks, services</li>
-            <li>WMI subscriptions, IFEO, AppInit_DLLs</li>
-            <li>Local users, administrators, security events</li>
-            <li>PowerShell history and execution policy</li>
-            <li>Windows Defender status &amp; threat detections</li>
-            <li>Loaded drivers and recently modified files</li>
-            <li>Installed software and firewall rules</li>
+            <li>Processes (path, signature, CPU), network, DNS cache</li>
+            <li>Registry run keys, WMI subscriptions, IFEO, AppInit_DLLs</li>
+            <li>LSA/auth packages, boot execute, network providers</li>
+            <li>LSASS RunAsPPL status, named pipes, shadow copies</li>
+            <li>Prefetch files, RDP client history, USB device history</li>
+            <li>Local users, security events incl. log-clearing (1102/104)</li>
+            <li>PowerShell history, execution policy, script block logging</li>
+            <li>Browser downloads &amp; extensions, Defender status, drivers</li>
           </ul>
           <button class="btn btn-green" onclick="downloadScript('windows')">↓ Download snowtrace_windows.ps1</button>
           <div class="divider"></div>
@@ -164,14 +164,14 @@
         </div>
         <div class="dl-body">
           <ul class="dl-items">
-            <li>Running processes with parent info</li>
-            <li>Network connections, listening ports, ARP</li>
-            <li>Cron jobs, systemd units, rc.local, profile.d</li>
+            <li>Processes, network, cron, systemd, kernel modules</li>
             <li>User accounts, sudoers, SSH authorized keys</li>
-            <li>Auth logs, failed logins, last login records</li>
-            <li>SUID/SGID files and world-writable paths</li>
-            <li>Bash/zsh history for malicious patterns</li>
-            <li>Kernel modules and iptables rules</li>
+            <li>Auth logs, failed logins, root SSH access</li>
+            <li>SUID/SGID, world-writable, file capabilities (getcap)</li>
+            <li>ld.so.preload, PAM config, shell profile tampering</li>
+            <li>Immutable files, process memory maps, XDG autostart</li>
+            <li>Package integrity, Docker/container artifacts</li>
+            <li>Crypto miner detection (processes + mining pool ports)</li>
           </ul>
           <button class="btn btn-cyan" onclick="downloadScript('linux')">↓ Download snowtrace_linux.sh</button>
           <div class="divider"></div>
@@ -562,11 +562,11 @@
           <div class="card-title">Capabilities at a Glance</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
             <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
-              <div style="font-size:22px;font-weight:700;color:var(--green)">15+</div>
+              <div style="font-size:22px;font-weight:700;color:var(--green)">25+</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">Check Categories</div>
             </div>
             <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
-              <div style="font-size:22px;font-weight:700;color:var(--cyan)">60+</div>
+              <div style="font-size:22px;font-weight:700;color:var(--cyan)">100+</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">IOC Detection Rules</div>
             </div>
             <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">

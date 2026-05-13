@@ -447,6 +447,221 @@ firewall-cmd --list-all 2>/dev/null || echo "(firewalld not installed)"
 )
 write_section "FIREWALL_RULES" "$FW_DATA"
 
+# ── 18. LD_PRELOAD / ld.so.preload ───────────────────────────────────────────
+log "Checking ld.so.preload and LD_PRELOAD..."
+LDPRELOAD_DATA=$(
+printf '--- /etc/ld.so.preload ---\n'
+if [ -f /etc/ld.so.preload ]; then
+    printf '[WARNING] File exists - contents:\n'
+    cat /etc/ld.so.preload 2>/dev/null
+else
+    echo "(not present - normal)"
+fi
+
+printf '\n--- LD_PRELOAD in live process environments ---\n'
+for pid in /proc/[0-9]*/environ; do
+    env_data=$(cat "$pid" 2>/dev/null | tr '\0' '\n')
+    if echo "$env_data" | grep -q "LD_PRELOAD"; then
+        proc_name=$(cat "$(dirname $pid)/comm" 2>/dev/null)
+        pid_num=$(echo "$pid" | grep -o '[0-9]*')
+        printf 'PID %s (%s): %s\n' "$pid_num" "$proc_name" "$(echo "$env_data" | grep LD_PRELOAD)"
+    fi
+done
+
+printf '\n--- /etc/ld.so.conf.d/ ---\n'
+ls -la /etc/ld.so.conf.d/ 2>/dev/null
+cat /etc/ld.so.conf 2>/dev/null
+)
+write_section "LD_PRELOAD" "$LDPRELOAD_DATA"
+
+# ── 19. FILE CAPABILITIES ─────────────────────────────────────────────────────
+log "Checking file capabilities..."
+CAP_DATA=$(
+printf '--- All files with capabilities set ---\n'
+getcap -r / 2>/dev/null || echo "(getcap not available)"
+
+printf '\n--- Capabilities on common interpreter targets ---\n'
+for f in /usr/bin/python3 /usr/bin/python2 /usr/bin/perl /usr/bin/ruby /usr/bin/vim \
+          /usr/bin/nmap /usr/bin/tcpdump /usr/bin/node /usr/bin/php; do
+    [ -f "$f" ] && cap=$(getcap "$f" 2>/dev/null) && [ -n "$cap" ] && echo "$cap"
+done
+)
+write_section "FILE_CAPABILITIES" "$CAP_DATA"
+
+# ── 20. PAM CONFIGURATION ─────────────────────────────────────────────────────
+log "Checking PAM configuration..."
+PAM_DATA=$(
+printf '--- /etc/pam.d/ listing ---\n'
+ls -la /etc/pam.d/ 2>/dev/null
+
+for svc in sshd sudo su login passwd; do
+    f="/etc/pam.d/${svc}"
+    [ -f "$f" ] && printf '\n--- %s ---\n' "$f" && cat "$f" 2>/dev/null
+done
+
+printf '\n--- Non-standard PAM modules in use ---\n'
+grep -rh "pam_" /etc/pam.d/ 2>/dev/null | grep -v "^#" | \
+    grep -vE "pam_(unix|env|limits|systemd|deny|permit|keyinit|loginuid|nologin|securetty|tally2|faillock|motd|mail|lastlog|selinux|namespace|cap|xauth|pwquality|cracklib|sss|ldap|winbind|access|localuser|group|exec|script|time|listfile)" | \
+    sort -u
+)
+write_section "PAM_CONFIG" "$PAM_DATA"
+
+# ── 21. SHELL PROFILES ────────────────────────────────────────────────────────
+log "Checking shell profile files for tampering..."
+PROFILE_DATA=$(
+for f in /etc/profile /etc/bash.bashrc /etc/bashrc /etc/environment; do
+    [ -f "$f" ] && printf '=== %s ===\n' "$f" && cat "$f" 2>/dev/null
+done
+
+printf '\n--- User shell profiles ---\n'
+for home in /root /home/*; do
+    for f in .bashrc .bash_profile .profile .zshrc .bash_logout; do
+        fp="${home}/${f}"
+        [ -f "$fp" ] && printf '=== %s ===\n' "$fp" && cat "$fp" 2>/dev/null
+    done
+done
+
+printf '\n--- Suspicious patterns in profiles (download/exec) ---\n'
+grep -rhnE "(wget|curl|nc |bash -i|/dev/tcp|base64|LD_PRELOAD|eval [^(]|exec [^-])" \
+    /etc/profile /etc/bash.bashrc /etc/bashrc /etc/environment \
+    /root/.bashrc /root/.bash_profile /root/.profile \
+    /home/*/.bashrc /home/*/.bash_profile /home/*/.profile 2>/dev/null | \
+    grep -v "^#" | sort -u
+)
+write_section "SHELL_PROFILES" "$PROFILE_DATA"
+
+# ── 22. IMMUTABLE FILES ───────────────────────────────────────────────────────
+log "Checking for immutable files (chattr +i)..."
+IMMUTABLE_DATA=$(
+for dir in /etc /bin /sbin /usr/bin /usr/sbin /tmp /var/www /root; do
+    [ -d "$dir" ] && lsattr "$dir" 2>/dev/null | awk '/^....i/{print "IMMUTABLE: " $0}'
+done
+
+printf '\n--- Immutable files in home dirs ---\n'
+for home in /root /home/*; do
+    [ -d "$home" ] && lsattr "$home" 2>/dev/null | awk '/^....i/{print "IMMUTABLE: " $0}'
+done
+)
+if echo "$IMMUTABLE_DATA" | grep -q "IMMUTABLE"; then
+    write_section "IMMUTABLE_FILES" "$IMMUTABLE_DATA"
+else
+    write_section "IMMUTABLE_FILES" "(no immutable files found in checked directories)"
+fi
+
+# ── 23. MEMORY-MAPPED LIBRARIES ───────────────────────────────────────────────
+log "Scanning process memory maps for libraries from suspicious paths..."
+MAPS_DATA=$(
+printf '--- Libraries loaded from /tmp /dev/shm /var/tmp ---\n'
+for maps_file in /proc/[0-9]*/maps; do
+    pid=$(echo "$maps_file" | grep -o '[0-9]*')
+    comm=$(cat "/proc/${pid}/comm" 2>/dev/null)
+    if grep -qE "/(tmp|dev/shm|var/tmp)/" "$maps_file" 2>/dev/null; then
+        printf '=== PID %s (%s) ===\n' "$pid" "$comm"
+        grep -E "/(tmp|dev/shm|var/tmp)/" "$maps_file" 2>/dev/null
+    fi
+done
+
+printf '\n--- Processes with deleted mapped executables ---\n'
+for maps_file in /proc/[0-9]*/maps; do
+    pid=$(echo "$maps_file" | grep -o '[0-9]*')
+    comm=$(cat "/proc/${pid}/comm" 2>/dev/null)
+    if grep -q "(deleted)" "$maps_file" 2>/dev/null; then
+        printf 'PID %s (%s):\n' "$pid" "$comm"
+        grep "(deleted)" "$maps_file" 2>/dev/null | head -2
+    fi
+done | head -60
+)
+write_section "PROC_MAPS" "$MAPS_DATA"
+
+# ── 24. XDG AUTOSTART ─────────────────────────────────────────────────────────
+log "Checking XDG autostart entries..."
+XDG_DATA=$(
+printf '--- System autostart (/etc/xdg/autostart/) ---\n'
+ls -la /etc/xdg/autostart/ 2>/dev/null || echo "(not found)"
+for f in /etc/xdg/autostart/*.desktop; do
+    [ -f "$f" ] && printf '=== %s ===\n' "$f" && cat "$f" 2>/dev/null
+done
+
+printf '\n--- User autostart (~/.config/autostart/) ---\n'
+for home in /root /home/*; do
+    adir="${home}/.config/autostart"
+    if [ -d "$adir" ]; then
+        printf '=== %s ===\n' "$adir"
+        ls -la "$adir" 2>/dev/null
+        for f in "$adir"/*.desktop; do
+            [ -f "$f" ] && cat "$f" 2>/dev/null
+        done
+    fi
+done
+)
+write_section "XDG_AUTOSTART" "$XDG_DATA"
+
+# ── 25. CONTAINER ARTIFACTS ───────────────────────────────────────────────────
+log "Checking container/Docker artifacts..."
+CONTAINER_DATA=$(
+printf '--- Running inside container check ---\n'
+[ -f /.dockerenv ] && echo "RUNNING INSIDE DOCKER CONTAINER" || echo "(not a docker container)"
+cat /proc/1/cgroup 2>/dev/null | head -5
+
+if command -v docker &>/dev/null; then
+    printf '\n--- Docker containers ---\n'
+    docker ps -a 2>/dev/null
+    printf '\n--- Docker images ---\n'
+    docker images 2>/dev/null
+    printf '\n--- Docker networks ---\n'
+    docker network ls 2>/dev/null
+else
+    printf '\n(docker not installed)\n'
+fi
+
+printf '\n--- Namespace listing (PID 1) ---\n'
+ls -la /proc/1/ns/ 2>/dev/null
+)
+write_section "CONTAINER_ARTIFACTS" "$CONTAINER_DATA"
+
+# ── 26. PACKAGE INTEGRITY ─────────────────────────────────────────────────────
+log "Checking package integrity..."
+PKG_INTEGRITY_DATA=$(
+if command -v rpm &>/dev/null; then
+    printf '--- RPM verification (modified files) ---\n'
+    rpm -Va 2>/dev/null | grep -v "^........." | head -50 || echo "(no tampering detected)"
+elif command -v debsums &>/dev/null; then
+    printf '--- debsums verification ---\n'
+    debsums -s 2>/dev/null | head -50 || echo "(no tampering detected)"
+elif command -v dpkg &>/dev/null; then
+    printf '--- dpkg verify (key packages) ---\n'
+    for pkg in bash coreutils openssh-server sudo login passwd; do
+        result=$(dpkg -V "$pkg" 2>/dev/null)
+        if [ -n "$result" ]; then echo "MODIFIED $pkg: $result"; else echo "OK: $pkg"; fi
+    done
+else
+    echo "(no package integrity tool found)"
+fi
+)
+write_section "PACKAGE_INTEGRITY" "$PKG_INTEGRITY_DATA"
+
+# ── 27. CRYPTO MINER INDICATORS ───────────────────────────────────────────────
+log "Checking for crypto miner indicators..."
+MINER_DATA=$(
+printf '--- Known miner process names ---\n'
+ps aux 2>/dev/null | grep -iE "(xmrig|minerd|xmr-stak|cpuminer|kswapd0|ksoftirqd[0-9]|kthreadd[0-9]+|cryptonight|stratum)" | grep -v grep || echo "(none found)"
+
+printf '\n--- Connections to mining pool ports (3333,4444,5555,7777,14444,45700) ---\n'
+ss -tnp 2>/dev/null | awk '$5 ~ /:3333$|:4444$|:5555$|:7777$|:14444$|:45700$/' || \
+netstat -tnp 2>/dev/null | awk '$4 ~ /:3333$|:4444$|:5555$|:7777$|:14444$|:45700$/'
+echo "(checked)"
+
+printf '\n--- Top 10 CPU-consuming processes ---\n'
+ps aux --sort=-%cpu 2>/dev/null | head -12
+
+printf '\n--- Miner config files in common drop dirs ---\n'
+find /tmp /var/tmp /dev/shm /root /home -maxdepth 4 \
+    \( -name "xmrig*" -o -name "minerd*" -o -name "cpuminer*" -o -name "*.conf" \) \
+    -newer /tmp -mtime -30 -type f 2>/dev/null | \
+    xargs grep -l "pool\|stratum\|wallet\|worker" 2>/dev/null | head -10 || echo "(none found)"
+)
+write_section "CRYPTO_MINERS" "$MINER_DATA"
+
 # ── Finalize ──────────────────────────────────────────────────────────────────
 END_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 printf '\n=== INVESTIGATION COMPLETE ===\nEndTime: %s\nOutputFile: %s\n' "$END_TIME" "$OUTPUT_FILE" >> "$OUTPUT_FILE"

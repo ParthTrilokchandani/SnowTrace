@@ -207,6 +207,27 @@ $(if ($wmiFilters) { $wmiFilters | Select-Object Name, Query | Format-Table | Ou
 
 --- WMI Event Consumers ---
 $(if ($wmiConsumers) { $wmiConsumers | Select-Object Name, ScriptText, CommandLineTemplate | Format-Table | Out-String } else { "  (none)" })
+
+--- LSA Security/Authentication/Notification Packages ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -EA SilentlyContinue |
+    Select-Object SecurityPackages, AuthenticationPackages, NotificationPackages | Format-List | Out-String).Trim())
+
+--- LSASS RunAsPPL (Credential Guard indicator) ---
+$(
+    $ppl = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name RunAsPPL -EA SilentlyContinue).RunAsPPL
+    if ($ppl -eq 1) { "RunAsPPL = 1 (LSASS protected)" } elseif ($ppl -eq 0) { "RunAsPPL = 0 (LSASS NOT protected - credentials at risk)" } else { "RunAsPPL not set (LSASS NOT protected)" }
+)
+
+--- Boot Execute ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name BootExecute -EA SilentlyContinue).BootExecute -join ", ")
+
+--- Network Provider Order ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" -EA SilentlyContinue).ProviderOrder)
+
+--- Winlogon Notification Packages ---
+$((Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\Notify" -EA SilentlyContinue | ForEach-Object {
+    "$($_.PSChildName): $((Get-ItemProperty $_.PSPath -EA SilentlyContinue).DllName)"
+}) -join "`r`n")
 "@
 Write-Section "PERSISTENCE" $persistData
 
@@ -232,9 +253,9 @@ Write-Log "Collecting security events (last 7 days)..."
 try {
     $loginEvents = Get-WinEvent -FilterHashtable @{
         LogName   = 'Security'
-        Id        = @(4624, 4625, 4648, 4720, 4726, 4728, 4732, 4756, 4672)
+        Id        = @(4624, 4625, 4648, 4720, 4726, 4728, 4732, 4756, 4672, 1102, 104)
         StartTime = (Get-Date).AddDays(-7)
-    } -MaxEvents 200 -EA Stop | Select-Object TimeCreated, Id,
+    } -MaxEvents 300 -EA Stop | Select-Object TimeCreated, Id,
         @{N='EventType';E={switch($_.Id){
             4624{'[OK] Successful Login'}
             4625{'[!!] FAILED Login'}
@@ -245,6 +266,8 @@ try {
             4732{'[ADM] User Added to Administrators'}
             4756{'[GRP] User Added to Universal Group'}
             4672{'[PRIV] Special Privileges Assigned'}
+            1102{'[CLR] SECURITY LOG CLEARED'}
+            104{'[CLR]  SYSTEM LOG CLEARED'}
         }}},
         @{N='Details';E={
             if ($_.Message) { $_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)) }
@@ -361,6 +384,100 @@ $(if ($suspProcs) { $suspProcs | Select-Object ProcessId, Name, ExecutablePath, 
 $(if ($suspConnections) { $suspConnections | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess | Format-Table | Out-String } else { "(none detected)" })
 "@
 Write-Section "SUSPICIOUS_INDICATORS" $suspData
+
+# ── 17. PREFETCH FILES ────────────────────────────────────────────────────────
+Write-Log "Collecting prefetch files..."
+$prefetchData = @"
+--- Prefetch Files (last 50, sorted by last execution time) ---
+$((Get-ChildItem "$env:SystemRoot\Prefetch\*.pf" -EA SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 50 |
+    Select-Object Name, LastWriteTime, @{N='Size_KB';E={[math]::Round($_.Length/1KB,1)}} |
+    Format-Table -AutoSize | Out-String).Trim())
+"@
+Write-Section "PREFETCH_FILES" $prefetchData
+
+# ── 18. SHADOW COPIES ─────────────────────────────────────────────────────────
+Write-Log "Collecting shadow copy status..."
+$vssOut  = (vssadmin list shadows 2>&1 | Out-String).Trim()
+$wrtOut  = (vssadmin list writers 2>&1 | Out-String).Trim()
+$shadowData = @"
+--- Volume Shadow Copies ---
+$vssOut
+
+--- VSS Writers Status ---
+$wrtOut
+"@
+Write-Section "SHADOW_COPIES" $shadowData
+
+# ── 19. RDP ARTIFACTS ─────────────────────────────────────────────────────────
+Write-Log "Collecting RDP artifacts..."
+$rdpHistory = (Get-ChildItem "HKCU:\SOFTWARE\Microsoft\Terminal Server Client\Servers" -EA SilentlyContinue | ForEach-Object {
+    [PSCustomObject]@{
+        Server   = $_.PSChildName
+        Username = (Get-ItemProperty $_.PSPath -Name UsernameHint -EA SilentlyContinue).UsernameHint
+    }
+} | Format-Table -AutoSize | Out-String).Trim()
+
+$rdpEnabled = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections
+$rdpData = @"
+--- RDP Service Status ---
+$(if ($rdpEnabled -eq 0) { "RDP ENABLED (fDenyTSConnections = 0)" } elseif ($rdpEnabled -eq 1) { "RDP Disabled (fDenyTSConnections = 1)" } else { "Unknown" })
+
+--- RDP Client History (recently connected servers) ---
+$rdpHistory
+
+--- Active Sessions ---
+$((query session 2>&1 | Out-String).Trim())
+"@
+Write-Section "RDP_ARTIFACTS" $rdpData
+
+# ── 20. USB HISTORY ───────────────────────────────────────────────────────────
+Write-Log "Collecting USB/removable device history..."
+$usbDevices = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR" -EA SilentlyContinue | ForEach-Object {
+    $class = $_.PSChildName
+    Get-ChildItem $_.PSPath -EA SilentlyContinue | ForEach-Object {
+        [PSCustomObject]@{
+            DeviceClass  = $class
+            InstanceID   = $_.PSChildName
+            FriendlyName = (Get-ItemProperty $_.PSPath -Name FriendlyName -EA SilentlyContinue).FriendlyName
+        }
+    }
+} | Format-Table -AutoSize | Out-String
+Write-Section "USB_HISTORY" $usbDevices
+
+# ── 21. NAMED PIPES ───────────────────────────────────────────────────────────
+Write-Log "Collecting named pipes..."
+$pipeList = try {
+    [System.IO.Directory]::GetFiles('\\.\pipe\') | Sort-Object | ForEach-Object { "  $_" }
+} catch { @("(Unable to enumerate - requires elevated context)") }
+Write-Section "NAMED_PIPES" ($pipeList | Out-String)
+
+# ── 22. BROWSER ARTIFACTS ─────────────────────────────────────────────────────
+Write-Log "Collecting browser artifacts..."
+$browserData = @"
+--- Downloads Folder (last 30 days) ---
+$((Get-ChildItem "$env:USERPROFILE\Downloads" -Recurse -File -EA SilentlyContinue |
+    Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-30) } |
+    Select-Object Name, LastWriteTime, @{N='Size_KB';E={[math]::Round($_.Length/1KB,1)}} |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 30 |
+    Format-Table -AutoSize | Out-String).Trim())
+
+--- Browser Profile Paths ---
+$(foreach ($p in @(
+    "$env:LOCALAPPDATA\Google\Chrome\User Data\Default",
+    "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default",
+    "$env:APPDATA\Mozilla\Firefox\Profiles"
+)) { if (Test-Path $p) { "EXISTS: $p" } else { "absent: $p" } })
+
+--- Chrome Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions" -EA SilentlyContinue |
+    Select-Object Name, LastWriteTime | Format-Table -AutoSize | Out-String).Trim())
+
+--- Edge Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Extensions" -EA SilentlyContinue |
+    Select-Object Name, LastWriteTime | Format-Table -AutoSize | Out-String).Trim())
+"@
+Write-Section "BROWSER_ARTIFACTS" $browserData
 
 # ── Finalize ──────────────────────────────────────────────────────────────────
 $endTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"

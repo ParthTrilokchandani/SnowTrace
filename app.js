@@ -114,14 +114,19 @@ function analyzeReport(text, filename) {
 // ════════════════════════════════════════════
 
 function analyzeWindows(s, F) {
-  const proc  = s.RUNNING_PROCESSES  || '';
-  const net   = s.NETWORK_CONNECTIONS || '';
-  const ps    = s.POWERSHELL_INFO    || '';
-  const sched = s.SCHEDULED_TASKS    || '';
-  const pers  = s.PERSISTENCE        || '';
-  const evts  = s.SECURITY_EVENTS    || '';
-  const defs  = s.DEFENDER_STATUS    || '';
-  const susp  = s.SUSPICIOUS_INDICATORS || '';
+  const proc    = s.RUNNING_PROCESSES    || '';
+  const net     = s.NETWORK_CONNECTIONS  || '';
+  const ps      = s.POWERSHELL_INFO      || '';
+  const sched   = s.SCHEDULED_TASKS      || '';
+  const pers    = s.PERSISTENCE          || '';
+  const evts    = s.SECURITY_EVENTS      || '';
+  const defs    = s.DEFENDER_STATUS      || '';
+  const susp    = s.SUSPICIOUS_INDICATORS || '';
+  const prefetch= s.PREFETCH_FILES       || '';
+  const shadow  = s.SHADOW_COPIES        || '';
+  const rdp     = s.RDP_ARTIFACTS        || '';
+  const pipes   = s.NAMED_PIPES          || '';
+  const browser = s.BROWSER_ARTIFACTS    || '';
 
   // ── Processes from suspicious locations ──
   const suspProcPaths = extractLines(proc, /\\temp\\|\\tmp\\|appdata\\local\\temp|\\windows\\temp|\\programdata\\/i);
@@ -284,10 +289,108 @@ function analyzeWindows(s, F) {
     });
   }
 
+  // ── Security events — log cleared ──
+  const logCleared = extractLines(evts, /CLR.*LOG CLEARED/i);
+  if (logCleared.length) {
+    F.push({
+      sev: 'critical',
+      title: `Security or System event log was cleared (${logCleared.length} event(s))`,
+      desc: 'Event log clearing (Event IDs 1102/104) is a classic attacker anti-forensics action. Attackers clear logs after gaining access to hide their activity.',
+      evidence: logCleared.join('\n'),
+    });
+  }
+
+  // ── Persistence — LSASS unprotected ──
+  if (/RunAsPPL = 0|LSASS NOT protected/i.test(pers)) {
+    F.push({
+      sev: 'medium',
+      title: 'LSASS is not protected (RunAsPPL disabled)',
+      desc: 'Without RunAsPPL, LSASS memory can be dumped to extract credential hashes and Kerberos tickets. Enable RunAsPPL via HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL = 1.',
+      evidence: extractLines(pers, /RunAsPPL/i).join('\n'),
+    });
+  }
+
+  // ── Persistence — non-standard Boot Execute ──
+  const bootExec = extractLines(pers, /Boot Execute/i);
+  if (bootExec.some(l => !/autocheck autochk/.test(l))) {
+    F.push({
+      sev: 'high',
+      title: 'Non-standard Boot Execute entry detected',
+      desc: 'Boot Execute entries run before Windows fully initializes. The only legitimate value is "autocheck autochk *". Anything else is highly suspicious.',
+      evidence: bootExec.join('\n'),
+    });
+  }
+
+  // ── Persistence — non-standard LSA packages ──
+  const lsaLines = extractLines(pers, /SecurityPackages|AuthenticationPackages/i);
+  const suspLsa = lsaLines.filter(l => /pam_|mimilib|ssp\.dll/i.test(l));
+  if (suspLsa.length) {
+    F.push({
+      sev: 'critical',
+      title: 'Suspicious LSA Security/Authentication package detected',
+      desc: 'Attackers inject malicious SSPs (e.g. mimilib.dll) into LSA to capture credentials on every login. Any unrecognized DLL here is a strong compromise indicator.',
+      evidence: suspLsa.join('\n'),
+    });
+  }
+
+  // ── Shadow copies deleted/missing ──
+  if (shadow && /no items found|no shadow copies/i.test(shadow)) {
+    F.push({
+      sev: 'high',
+      title: 'No Volume Shadow Copies found — possible ransomware activity',
+      desc: 'Ransomware consistently deletes VSS shadow copies to prevent recovery. No shadow copies on a production system warrants investigation.',
+      evidence: shadow.split('\n').slice(0, 5).join('\n'),
+    });
+  }
+
+  // ── Named pipes — suspicious ──
+  const suspPipes = extractLines(pipes, /meterpreter|msf|cobalt|cobaltstrike|beacon|empire|havoc|sliver|postex/i);
+  if (suspPipes.length) {
+    F.push({
+      sev: 'critical',
+      title: 'Named pipe associated with known C2 framework detected',
+      desc: 'Metasploit, Cobalt Strike, Empire and similar frameworks use characteristic named pipe names. This is a strong active compromise indicator.',
+      evidence: suspPipes.join('\n'),
+    });
+  }
+
+  // ── RDP — unexpected connections ──
+  const rdpConns = extractLines(rdp, /Server\s+:/i);
+  if (rdpConns.length) {
+    F.push({
+      sev: 'medium',
+      title: `${rdpConns.length} saved RDP connection(s) in client history`,
+      desc: 'RDP connection history reveals systems this machine has remotely accessed. Unexpected destinations may indicate lateral movement by an attacker.',
+      evidence: rdpConns.join('\n'),
+    });
+  }
+
+  // ── Prefetch — execution from suspicious paths ──
+  const suspPrefetch = extractLines(prefetch, /TEMP|TMP|APPDATA|DOWNLOADS|\\USERS\\PUBLIC/i);
+  if (suspPrefetch.length) {
+    F.push({
+      sev: 'high',
+      title: `Prefetch shows execution of files from suspicious directories`,
+      desc: 'Prefetch records binary execution even if the file was deleted afterward. Entries from Temp, AppData, or Downloads paths warrant investigation.',
+      evidence: suspPrefetch.slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Browser — suspicious downloads ──
+  const suspDownloads = extractLines(browser, /\.exe$|\.ps1$|\.bat$|\.vbs$|\.js$|\.hta$|\.cmd$|\.scr$|\.lnk$/i);
+  if (suspDownloads.length) {
+    F.push({
+      sev: 'high',
+      title: `${suspDownloads.length} potentially malicious file type(s) in Downloads folder`,
+      desc: 'Executable and script files in the Downloads folder (.exe, .ps1, .bat, .vbs, .hta, .js) are common initial access artifacts. Verify each file is legitimate.',
+      evidence: suspDownloads.slice(0, 10).join('\n'),
+    });
+  }
+
   F.push({
     sev: 'info',
     title: 'Investigation complete — all major categories scanned',
-    desc: 'SnowTrace collected: processes, network connections, persistence mechanisms, scheduled tasks, services, user accounts, security events, PowerShell history, recently modified files, installed software, firewall rules, and Windows Defender status.',
+    desc: 'SnowTrace collected: processes, network, persistence (run keys, WMI, IFEO, LSA packages, boot execute), scheduled tasks, services, users, security events (incl. log clearing), PowerShell history, prefetch, shadow copies, RDP artifacts, USB history, named pipes, browser artifacts, installed software, firewall, and Defender status.',
     evidence: '',
   });
 }
@@ -297,18 +400,26 @@ function analyzeWindows(s, F) {
 // ════════════════════════════════════════════
 
 function analyzeLinux(s, F) {
-  const proc  = s.RUNNING_PROCESSES    || '';
-  const net   = s.NETWORK_CONNECTIONS  || '';
-  const cron  = s.CRON_JOBS            || '';
-  const ssh   = s.SSH_KEYS             || '';
-  const hist  = s.BASH_HISTORY         || '';
-  const auth  = s.AUTH_LOGS            || '';
-  const suid  = s.SUID_SGID_FILES      || '';
-  const ww    = s.WORLD_WRITABLE       || '';
-  const hosts = s.HOSTS_FILE           || '';
-  const susp  = s.SUSPICIOUS_INDICATORS || '';
-  const users = s.USER_ACCOUNTS        || '';
-  const mods  = s.KERNEL_MODULES       || '';
+  const proc      = s.RUNNING_PROCESSES    || '';
+  const net       = s.NETWORK_CONNECTIONS  || '';
+  const cron      = s.CRON_JOBS            || '';
+  const ssh       = s.SSH_KEYS             || '';
+  const hist      = s.BASH_HISTORY         || '';
+  const auth      = s.AUTH_LOGS            || '';
+  const suid      = s.SUID_SGID_FILES      || '';
+  const ww        = s.WORLD_WRITABLE       || '';
+  const hosts     = s.HOSTS_FILE           || '';
+  const susp      = s.SUSPICIOUS_INDICATORS || '';
+  const users     = s.USER_ACCOUNTS        || '';
+  const mods      = s.KERNEL_MODULES       || '';
+  const ldpre     = s.LD_PRELOAD           || '';
+  const caps      = s.FILE_CAPABILITIES    || '';
+  const pam       = s.PAM_CONFIG           || '';
+  const profiles  = s.SHELL_PROFILES       || '';
+  const immutable = s.IMMUTABLE_FILES      || '';
+  const procmaps  = s.PROC_MAPS            || '';
+  const miners    = s.CRYPTO_MINERS        || '';
+  const pkgint    = s.PACKAGE_INTEGRITY    || '';
 
   // ── Processes from /tmp ──
   const tmpProcs = extractLines(proc + susp, /\/tmp\/|\/dev\/shm\/|\/var\/tmp\//);
@@ -483,10 +594,118 @@ function analyzeLinux(s, F) {
     });
   }
 
+  // ── ld.so.preload ──
+  if (/\[WARNING\] File exists/i.test(ldpre)) {
+    F.push({
+      sev: 'critical',
+      title: '/etc/ld.so.preload exists — classic rootkit persistence mechanism',
+      desc: '/etc/ld.so.preload forces a shared library to be loaded into every process. Attackers use it to intercept system calls, hide files/processes, and capture credentials. This file should not exist on a clean system.',
+      evidence: ldpre.split('\n').slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Dangerous file capabilities ──
+  const dangerCaps = extractLines(caps, /cap_setuid|cap_setgid|cap_sys_admin|cap_net_raw|cap_dac_override/i)
+    .filter(l => !l.match(/^---/) && l.trim());
+  if (dangerCaps.length) {
+    F.push({
+      sev: 'high',
+      title: `${dangerCaps.length} file(s) with dangerous capabilities set`,
+      desc: 'Capabilities like cap_setuid, cap_sys_admin, or cap_dac_override on binaries (especially interpreters like python/perl) allow privilege escalation without a SUID bit — often missed by standard audits.',
+      evidence: dangerCaps.join('\n'),
+    });
+  }
+
+  // ── Unusual PAM modules ──
+  const unusualPam = extractLines(pam, /\.so/).filter(l =>
+    !l.match(/^#/) && l.trim() &&
+    !/pam_(unix|env|limits|systemd|deny|permit|keyinit|loginuid|nologin|securetty|tally2|faillock|motd|mail|lastlog|selinux|namespace|cap|xauth|pwquality|cracklib|sss|ldap|winbind|access|localuser|group|exec|script|time|listfile)/i.test(l)
+  );
+  if (unusualPam.length) {
+    F.push({
+      sev: 'high',
+      title: 'Non-standard PAM module(s) detected',
+      desc: 'Attackers plant malicious PAM modules (e.g. pam_backdoor.so) that accept a hardcoded password for any account. Any unrecognized PAM module must be investigated.',
+      evidence: unusualPam.slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Shell profile tampering ──
+  const suspProfile = extractLines(profiles, /wget|curl|\/dev\/tcp|bash\s+-i|mkfifo|base64|LD_PRELOAD|exec\s+[^-]/i)
+    .filter(l => !l.match(/^#/) && l.trim());
+  if (suspProfile.length) {
+    F.push({
+      sev: 'critical',
+      title: 'Shell profile file contains suspicious command(s)',
+      desc: 'Attacker-injected commands in .bashrc, .profile, /etc/profile etc. execute every time a user opens a shell. This is used for reverse shell callbacks, credential capture, or LD_PRELOAD injection.',
+      evidence: suspProfile.slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Immutable files in sensitive dirs ──
+  const immutableHits = extractLines(immutable, /IMMUTABLE:/i);
+  if (immutableHits.length) {
+    F.push({
+      sev: 'high',
+      title: `${immutableHits.length} immutable file(s) detected (chattr +i)`,
+      desc: 'Attackers set the immutable bit on their files and backdoors to prevent deletion even by root. Immutable files in /etc, /bin, or home directories are highly suspicious.',
+      evidence: immutableHits.join('\n'),
+    });
+  }
+
+  // ── Libraries from /tmp loaded in processes ──
+  const mapHits = extractLines(procmaps, /\/(tmp|dev\/shm|var\/tmp)\//i)
+    .filter(l => !l.match(/^===/));
+  if (mapHits.length) {
+    F.push({
+      sev: 'critical',
+      title: 'Shared library from temp directory loaded in live process',
+      desc: 'A running process has mapped a library from /tmp, /dev/shm, or /var/tmp. This is a strong indicator of process injection or a running malware implant.',
+      evidence: mapHits.slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Deleted memory mappings ──
+  const deletedMaps = extractLines(procmaps, /\(deleted\)/i)
+    .filter(l => !l.match(/^PID/) === false);
+  if (deletedMaps.length > 5) {
+    F.push({
+      sev: 'medium',
+      title: `Processes with deleted memory-mapped files detected`,
+      desc: 'Processes mapping files that have been deleted from disk may indicate malware that executes from memory after removing its on-disk binary.',
+      evidence: deletedMaps.slice(0, 8).join('\n'),
+    });
+  }
+
+  // ── Crypto miners ──
+  const minerProcs = extractLines(miners, /xmrig|minerd|xmr-stak|cpuminer|kswapd0|cryptonight|stratum/i)
+    .filter(l => !l.match(/^---/) && l.trim());
+  const minerConns = extractLines(miners, /:3333|:4444|:5555|:14444|:45700/);
+  if (minerProcs.length || minerConns.length) {
+    F.push({
+      sev: 'critical',
+      title: 'Crypto miner indicators detected',
+      desc: 'Known miner process names or connections to mining pool ports (3333, 4444, 14444) were found. Cryptomining malware typically runs as a persistent service and can indicate deeper system compromise.',
+      evidence: [...minerProcs, ...minerConns].slice(0, 10).join('\n'),
+    });
+  }
+
+  // ── Package integrity failures ──
+  const pkgFail = extractLines(pkgint, /MODIFIED|^S\.|^M\.|^5\./i)
+    .filter(l => l.trim() && !l.match(/^---/));
+  if (pkgFail.length) {
+    F.push({
+      sev: 'critical',
+      title: `${pkgFail.length} system package file(s) have been tampered with`,
+      desc: 'Package integrity verification found modified system files. Attackers replace system binaries (ls, ps, netstat, sshd) with trojaned versions to maintain access and hide activity.',
+      evidence: pkgFail.slice(0, 15).join('\n'),
+    });
+  }
+
   F.push({
     sev: 'info',
     title: 'Investigation complete — all major categories scanned',
-    desc: 'SnowTrace collected: processes, network connections, cron jobs, systemd services, user accounts, SSH keys, auth logs, bash history, SUID/SGID files, world-writable files, kernel modules, hosts file, and package history.',
+    desc: 'SnowTrace collected: processes, network, cron, systemd, users, SSH keys, auth logs, shell history, SUID/SGID, world-writable, kernel modules, ld.so.preload, file capabilities, PAM config, shell profiles, immutable files, process memory maps, XDG autostart, containers, package integrity, and crypto miner indicators.',
     evidence: '',
   });
 }
@@ -756,7 +975,7 @@ $(Get-MpComputerStatus -EA SilentlyContinue | Select-Object AMServiceEnabled,Ant
 $(Get-MpThreatDetection -EA SilentlyContinue | Select-Object -First 10 | Format-Table | Out-String)
 "@
 
-Write-Host "  [15/15] Suspicious Checks..." -ForegroundColor DarkCyan
+Write-Host "  [15/22] Suspicious Checks..." -ForegroundColor DarkCyan
 $sp = Get-WmiObject Win32_Process | Where-Object { $_.ExecutablePath -match "\\temp\\|\\tmp\\|appdata\\local\\temp|\\windows\\temp" }
 $sc = Get-NetTCPConnection | Where-Object { $_.RemotePort -in @(4444,4445,1337,31337,8888,9090,6667,6697,1234,5555,7777) -and $_.State -eq 'Established' }
 Write-Section "SUSPICIOUS_INDICATORS" @"
@@ -764,6 +983,58 @@ Write-Section "SUSPICIOUS_INDICATORS" @"
 $(if ($sp) { $sp | Select-Object ProcessId,Name,ExecutablePath | Format-Table | Out-String } else { "(none)" })
 --- Connections to high-risk ports ---
 $(if ($sc) { $sc | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess | Format-Table | Out-String } else { "(none)" })
+"@
+
+Write-Host "  [16/22] Prefetch files..." -ForegroundColor DarkCyan
+Write-Section "PREFETCH_FILES" (Get-ChildItem "$env:SystemRoot\Prefetch\*.pf" -EA SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 50 | Select-Object Name,LastWriteTime | Format-Table -AutoSize | Out-String)
+
+Write-Host "  [17/22] Shadow copies..." -ForegroundColor DarkCyan
+Write-Section "SHADOW_COPIES" (vssadmin list shadows 2>&1 | Out-String)
+
+Write-Host "  [18/22] RDP artifacts..." -ForegroundColor DarkCyan
+$rdpE = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections
+Write-Section "RDP_ARTIFACTS" @"
+--- RDP Status ---
+$(if ($rdpE -eq 0) { "RDP ENABLED" } elseif ($rdpE -eq 1) { "RDP Disabled" } else { "Unknown" })
+--- Client History ---
+$((Get-ChildItem "HKCU:\SOFTWARE\Microsoft\Terminal Server Client\Servers" -EA SilentlyContinue | ForEach-Object { [PSCustomObject]@{Server=$_.PSChildName;User=(Get-ItemProperty $_.PSPath -Name UsernameHint -EA SilentlyContinue).UsernameHint} } | Format-Table | Out-String).Trim())
+--- Active Sessions ---
+$((query session 2>&1 | Out-String).Trim())
+"@
+
+Write-Host "  [19/22] USB history..." -ForegroundColor DarkCyan
+Write-Section "USB_HISTORY" (Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR" -EA SilentlyContinue | ForEach-Object { $c=$_.PSChildName; Get-ChildItem $_.PSPath -EA SilentlyContinue | ForEach-Object { [PSCustomObject]@{Class=$c;InstanceID=$_.PSChildName;Name=(Get-ItemProperty $_.PSPath -Name FriendlyName -EA SilentlyContinue).FriendlyName} } } | Format-Table -AutoSize | Out-String)
+
+Write-Host "  [20/22] Named pipes..." -ForegroundColor DarkCyan
+Write-Section "NAMED_PIPES" (try { [System.IO.Directory]::GetFiles('\\.\pipe\') | Sort-Object | Out-String } catch { "(requires elevated context)" })
+
+Write-Host "  [21/22] Persistence (extended)..." -ForegroundColor DarkCyan
+$ppl2 = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name RunAsPPL -EA SilentlyContinue).RunAsPPL
+$wmiF2 = Get-WMIObject -Namespace root\subscription -Class __EventFilter -EA SilentlyContinue
+$wmiC2 = Get-WMIObject -Namespace root\subscription -Class __EventConsumer -EA SilentlyContinue
+Write-Section "PERSISTENCE" @"
+--- LSA Packages ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -EA SilentlyContinue | Select-Object SecurityPackages,AuthenticationPackages,NotificationPackages | Format-List | Out-String).Trim())
+--- LSASS RunAsPPL ---
+$(if ($ppl2 -eq 1) { "RunAsPPL = 1 (LSASS protected)" } else { "RunAsPPL = $ppl2 (LSASS NOT protected)" })
+--- Boot Execute ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name BootExecute -EA SilentlyContinue).BootExecute -join ", ")
+--- Network Provider Order ---
+$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" -EA SilentlyContinue).ProviderOrder)
+--- WMI Filters ---
+$(if ($wmiF2) { $wmiF2 | Select-Object Name,Query | Format-Table | Out-String } else { "(none)" })
+--- WMI Consumers ---
+$(if ($wmiC2) { $wmiC2 | Select-Object Name,ScriptText,CommandLineTemplate | Format-Table | Out-String } else { "(none)" })
+"@
+
+Write-Host "  [22/22] Browser artifacts..." -ForegroundColor DarkCyan
+Write-Section "BROWSER_ARTIFACTS" @"
+--- Downloads (last 30 days) ---
+$((Get-ChildItem "$env:USERPROFILE\Downloads" -Recurse -File -EA SilentlyContinue | Where-Object {$_.LastWriteTime -gt (Get-Date).AddDays(-30)} | Select-Object Name,LastWriteTime,@{N='KB';E={[math]::Round($_.Length/1KB,1)}} | Sort-Object LastWriteTime -Descending | Select-Object -First 30 | Format-Table -AutoSize | Out-String).Trim())
+--- Chrome Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions" -EA SilentlyContinue | Select-Object Name,LastWriteTime | Format-Table | Out-String).Trim())
+--- Edge Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Extensions" -EA SilentlyContinue | Select-Object Name,LastWriteTime | Format-Table | Out-String).Trim())
 "@
 
 Add-Content -Path $outputFile -Value "\`r\`n=== INVESTIGATION COMPLETE ===\`r\`nEndTime: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8
@@ -952,6 +1223,62 @@ ws "SUSPICIOUS_INDICATORS" "--- Procs from /tmp /dev/shm ---
 \$(find /etc /bin /sbin /usr/bin /usr/sbin -perm -002 -type f 2>/dev/null | head -10 || echo '(none)')
 --- SUID in unusual locations ---
 \$(find / -perm -4000 -type f 2>/dev/null | grep -v -E '^(/usr/(s?bin|lib)|/(s?bin)|/proc|/sys|/snap)' | head -10 || echo '(none)')"
+
+log "[18/27] ld.so.preload check..."
+ws "LD_PRELOAD" "\$([ -f /etc/ld.so.preload ] && printf '[WARNING] File exists:\\n' && cat /etc/ld.so.preload || echo '(not present - normal)')
+--- LD_PRELOAD in process environments ---
+\$(for pid in /proc/[0-9]*/environ; do e=\$(cat "\$pid" 2>/dev/null | tr '\\0' '\\n'); echo "\$e" | grep -q LD_PRELOAD && printf 'PID %s (%s): %s\\n' "\$(echo \$pid|grep -o '[0-9]*')" "\$(cat \$(dirname \$pid)/comm 2>/dev/null)" "\$(echo "\$e"|grep LD_PRELOAD)"; done)"
+
+log "[19/27] File capabilities..."
+ws "FILE_CAPABILITIES" "--- All files with capabilities ---
+\$(getcap -r / 2>/dev/null || echo '(getcap not available)')"
+
+log "[20/27] PAM configuration..."
+ws "PAM_CONFIG" "--- /etc/pam.d/ listing ---
+\$(ls -la /etc/pam.d/ 2>/dev/null)
+--- sshd ---
+\$(cat /etc/pam.d/sshd 2>/dev/null)
+--- Non-standard PAM modules ---
+\$(grep -rh 'pam_' /etc/pam.d/ 2>/dev/null | grep -v '^#' | grep -vE 'pam_(unix|env|limits|systemd|deny|permit|keyinit|loginuid|nologin|securetty|tally2|faillock|motd|mail|lastlog|selinux|namespace|cap|xauth|pwquality|cracklib|sss|ldap|winbind|access|localuser|group|exec|script|time|listfile)' | sort -u)"
+
+log "[21/27] Shell profiles..."
+ws "SHELL_PROFILES" "\$(for f in /etc/profile /etc/bash.bashrc /etc/bashrc /etc/environment; do [ -f \"\$f\" ] && printf '=== %s ===\\n' \"\$f\" && cat \"\$f\" 2>/dev/null; done)
+--- User profiles ---
+\$(for h in /root /home/*; do for f in .bashrc .bash_profile .profile .zshrc; do fp=\"\${h}/\${f}\"; [ -f \"\$fp\" ] && printf '=== %s ===\\n' \"\$fp\" && cat \"\$fp\" 2>/dev/null; done; done)
+--- Suspicious patterns ---
+\$(grep -rhnE '(wget|curl|nc |bash -i|/dev/tcp|base64|LD_PRELOAD|eval [^(]|exec [^-])' /etc/profile /etc/bash.bashrc /etc/bashrc /home/*/.bashrc /home/*/.bash_profile /root/.bashrc /root/.bash_profile 2>/dev/null | grep -v '^#' | sort -u)"
+
+log "[22/27] Immutable files..."
+ws "IMMUTABLE_FILES" "\$(for d in /etc /bin /sbin /usr/bin /usr/sbin /tmp /root; do [ -d \"\$d\" ] && lsattr \"\$d\" 2>/dev/null | awk '/^....i/{print \"IMMUTABLE: \" \$0}'; done)"
+
+log "[23/27] Process memory maps..."
+ws "PROC_MAPS" "--- Libraries from /tmp /dev/shm /var/tmp ---
+\$(for m in /proc/[0-9]*/maps; do pid=\$(echo \$m|grep -o '[0-9]*'); comm=\$(cat /proc/\${pid}/comm 2>/dev/null); grep -qE '/(tmp|dev/shm|var/tmp)/' \"\$m\" 2>/dev/null && printf '=== PID %s (%s) ===\\n' \"\$pid\" \"\$comm\" && grep -E '/(tmp|dev/shm|var/tmp)/' \"\$m\" 2>/dev/null; done)
+--- Deleted memory mappings ---
+\$(for m in /proc/[0-9]*/maps; do pid=\$(echo \$m|grep -o '[0-9]*'); comm=\$(cat /proc/\${pid}/comm 2>/dev/null); grep -q '(deleted)' \"\$m\" 2>/dev/null && printf 'PID %s (%s) has deleted mappings\\n' \"\$pid\" \"\$comm\"; done | head -30)"
+
+log "[24/27] XDG autostart..."
+ws "XDG_AUTOSTART" "--- System (/etc/xdg/autostart/) ---
+\$(ls -la /etc/xdg/autostart/ 2>/dev/null; for f in /etc/xdg/autostart/*.desktop; do [ -f \"\$f\" ] && printf '=== %s ===\\n' \"\$f\" && cat \"\$f\" 2>/dev/null; done)
+--- User (~/.config/autostart/) ---
+\$(for h in /root /home/*; do d=\"\${h}/.config/autostart\"; [ -d \"\$d\" ] && ls -la \"\$d\" 2>/dev/null && for f in \"\$d\"/*.desktop; do [ -f \"\$f\" ] && cat \"\$f\" 2>/dev/null; done; done)"
+
+log "[25/27] Containers..."
+ws "CONTAINER_ARTIFACTS" "\$([ -f /.dockerenv ] && echo 'RUNNING INSIDE DOCKER CONTAINER' || echo '(not a docker container)')
+\$(cat /proc/1/cgroup 2>/dev/null | head -5)
+--- Docker ---
+\$(command -v docker &>/dev/null && docker ps -a 2>/dev/null || echo '(docker not installed)')"
+
+log "[26/27] Package integrity..."
+ws "PACKAGE_INTEGRITY" "\$(if command -v rpm &>/dev/null; then rpm -Va 2>/dev/null | grep -v '^.........' | head -50 || echo '(no tampering)'; elif command -v debsums &>/dev/null; then debsums -s 2>/dev/null | head -50 || echo '(no tampering)'; elif command -v dpkg &>/dev/null; then for p in bash coreutils openssh-server sudo login passwd; do r=\$(dpkg -V \"\$p\" 2>/dev/null); [ -n \"\$r\" ] && echo \"MODIFIED \$p: \$r\" || echo \"OK: \$p\"; done; else echo '(no integrity tool found)'; fi)"
+
+log "[27/27] Crypto miner indicators..."
+ws "CRYPTO_MINERS" "--- Miner process names ---
+\$(ps aux 2>/dev/null | grep -iE '(xmrig|minerd|xmr-stak|cpuminer|kswapd0|cryptonight|stratum)' | grep -v grep || echo '(none)')
+--- Mining pool connections (3333,4444,5555,7777,14444,45700) ---
+\$(ss -tnp 2>/dev/null | awk '\$5 ~ /:3333\$|:4444\$|:5555\$|:7777\$|:14444\$|:45700\$/' || echo '(none)')
+--- Top CPU consumers ---
+\$(ps aux --sort=-%cpu 2>/dev/null | head -12)"
 
 printf '\\n=== INVESTIGATION COMPLETE ===\\nEndTime: %s\\nOutputFile: %s\\n' "\$(date '+%Y-%m-%d %H:%M:%S')" "\$OUTPUT_FILE" >> "\$OUTPUT_FILE"
 echo -e "\${C_GREEN}  [DONE] Report: \$OUTPUT_FILE\${C_RESET}"
