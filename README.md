@@ -16,7 +16,7 @@ SnowTrace collects forensic artifacts from a potentially compromised system and 
 <p align="center">
   <b>DISCLAIMER: This tool is for AUTHORIZED security testing and educational purposes ONLY.</b><br/>
   Unauthorized scanning of systems you do not own or have explicit written permission to test is
-  illegal. Always obtain written authorization before conducting any reconnaissance.
+  illegal. Always obtain written authorization before conducting any tests.
 </p>
 
 ---
