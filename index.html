@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnowTrace — Cyber Triage Platform | Agent P</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════ HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">ST</div>
+    <div>
+      <div class="logo-text">SnowTrace</div>
+      <div class="logo-sub">Cyber Triage Platform</div>
+    </div>
+  </div>
+  <nav>
+    <button class="nav-btn active" onclick="showTab('home',this)">Home</button>
+    <button class="nav-btn" onclick="showTab('download',this)">Download</button>
+    <button class="nav-btn" onclick="showTab('analyze',this)">Analyze</button>
+    <button class="nav-btn" onclick="showTab('howto',this)">How-To</button>
+    <button class="nav-btn" onclick="showTab('remediation',this)">Remediation</button>
+    <button class="nav-btn" onclick="showTab('about',this)">About</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ═══════════════════════════════════════════════════ HOME -->
+  <div id="tab-home" class="tab-content active">
+    <div class="hero">
+      <div class="hero-ascii">
+ ███████╗███╗   ██╗ ██████╗ ██╗    ██╗████████╗██████╗  █████╗  ██████╗███████╗
+ ██╔════╝████╗  ██║██╔═══██╗██║    ██║╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝
+ ███████╗██╔██╗ ██║██║   ██║██║ █╗ ██║   ██║   ██████╔╝███████║██║     █████╗
+ ╚════██║██║╚██╗██║██║   ██║██║███╗██║   ██║   ██╔══██╗██╔══██║██║     ██╔══╝
+ ███████║██║ ╚████║╚██████╔╝╚███╔███╔╝   ██║   ██║  ██║██║  ██║╚██████╗███████╗
+ ╚══════╝╚═╝  ╚═══╝ ╚═════╝  ╚══╝╚══╝    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝</div>
+      <div class="hero-tagline">Incident Response &amp; Compromise Assessment</div>
+      <div class="hero-sub">
+        SnowTrace collects forensic artifacts from live Windows and Linux systems, then intelligently
+        analyzes them for indicators of compromise — persistence mechanisms, lateral movement,
+        exfiltration, and attacker tooling.
+      </div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-num">15+</div><div class="stat-label">Check Categories</div></div>
+        <div class="stat-box"><div class="stat-num">60+</div><div class="stat-label">IOC Rules</div></div>
+        <div class="stat-box"><div class="stat-num">2</div><div class="stat-label">Platforms</div></div>
+        <div class="stat-box"><div class="stat-num">4</div><div class="stat-label">Severity Levels</div></div>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="showTab('download',document.querySelectorAll('.nav-btn')[1])">↓ Download Scripts</button>
+        <button class="btn btn-cyan"  onclick="showTab('analyze',document.querySelectorAll('.nav-btn')[2])">⬆ Analyze Report</button>
+      </div>
+    </div>
+
+    <div class="grid-2" style="max-width:960px;margin:0 auto">
+      <div class="card">
+        <div class="card-title">What SnowTrace Checks</div>
+        <ul class="feature-list">
+          <li>Running processes with path &amp; signature validation</li>
+          <li>Active network connections and unusual ports</li>
+          <li>Persistence: registry run keys, WMI, cron, systemd</li>
+          <li>Scheduled tasks and services with suspicious actions</li>
+          <li>User accounts, new admin additions, SSH keys</li>
+          <li>PowerShell / bash history for malicious patterns</li>
+          <li>SUID/SGID files and world-writable directories</li>
+          <li>Security events: failed logins, account creation</li>
+          <li>Recently modified files in sensitive locations</li>
+          <li>Windows Defender / AV status and recent detections</li>
+          <li>DNS cache and suspicious /etc/hosts entries</li>
+          <li>Loaded kernel modules (rootkit indicators)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">How It Works</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Download Script</div>
+              <div class="step-desc">Get the PowerShell script (Windows) or Bash script (Linux) from the Download tab.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Run on Target System</div>
+              <div class="step-desc">Execute as Administrator (Windows) or root/sudo (Linux). Takes 1–3 minutes.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Upload Report Here</div>
+              <div class="step-desc">Drag and drop the generated <code>.txt</code> file into the Analyze tab.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Review Findings</div>
+              <div class="step-desc">SnowTrace flags suspicious artifacts by severity with evidence and remediation guidance.</div>
+            </div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="alert-info">⚡ All analysis runs locally in your browser. No data is ever uploaded to external servers.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ DOWNLOAD -->
+  <div id="tab-download" class="tab-content">
+    <div class="page-wrap">
+    <div class="section-title">Download Investigation Scripts</div>
+    <div class="alert-info" style="margin-bottom:20px">
+      Scripts generate a structured <code>.txt</code> report on the local system. Transfer it to this dashboard
+      for analysis. No internet connection required on the target machine.
+    </div>
+    <div class="grid-2">
+
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon"><svg height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm320-320v240h240v-240H520Zm0-80h240v-240H520v240Zm-80 0v-240H200v240h240Zm0 80H200v240h240v-240Z"/></svg>
+          </div>
+          <div>
+            <div class="dl-title">Windows Module</div>
+            <div class="dl-meta">PowerShell · v1.0 · Agent P</div>
+          </div>
+          <span class="tag tag-win">Windows</span>
+        </div>
+        <div class="dl-body">
+          <ul class="dl-items">
+            <li>Processes, network connections, DNS cache</li>
+            <li>Registry run keys, scheduled tasks, services</li>
+            <li>WMI subscriptions, IFEO, AppInit_DLLs</li>
+            <li>Local users, administrators, security events</li>
+            <li>PowerShell history and execution policy</li>
+            <li>Windows Defender status &amp; threat detections</li>
+            <li>Loaded drivers and recently modified files</li>
+            <li>Installed software and firewall rules</li>
+          </ul>
+          <button class="btn btn-green" onclick="downloadScript('windows')">↓ Download snowtrace_windows.ps1</button>
+          <div class="divider"></div>
+          <div style="color:var(--text2);font-size:11px">Run as:
+            <div class="code-block">powershell -ExecutionPolicy Bypass -File snowtrace_windows.ps1<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon"><svg height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z"/></svg>
+          </div>
+          <div>
+            <div class="dl-title">Linux Module</div>
+            <div class="dl-meta">Bash · v1.0 · Agent P</div>
+          </div>
+          <span class="tag tag-lin">Linux</span>
+        </div>
+        <div class="dl-body">
+          <ul class="dl-items">
+            <li>Running processes with parent info</li>
+            <li>Network connections, listening ports, ARP</li>
+            <li>Cron jobs, systemd units, rc.local, profile.d</li>
+            <li>User accounts, sudoers, SSH authorized keys</li>
+            <li>Auth logs, failed logins, last login records</li>
+            <li>SUID/SGID files and world-writable paths</li>
+            <li>Bash/zsh history for malicious patterns</li>
+            <li>Kernel modules and iptables rules</li>
+          </ul>
+          <button class="btn btn-cyan" onclick="downloadScript('linux')">↓ Download snowtrace_linux.sh</button>
+          <div class="divider"></div>
+          <div style="color:var(--text2);font-size:11px">Run as:
+            <div class="code-block">sudo bash snowtrace_linux.sh<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    </div><!-- /.page-wrap -->
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ ANALYZE -->
+  <div id="tab-analyze" class="tab-content">
+    <div class="page-wrap">
+    <div class="section-title">Analyze Investigation Report</div>
+
+    <div id="upload-area">
+      <div class="upload-zone" id="drop-zone"
+           onclick="document.getElementById('file-input').click()"
+           ondragover="handleDragOver(event)"
+           ondragleave="handleDragLeave(event)"
+           ondrop="handleDrop(event)">
+        <div class="upload-icon">📂</div>
+        <div class="upload-title">Drop Report File Here</div>
+        <div class="upload-sub">or click to browse · accepts snowtrace_*.txt files</div>
+      </div>
+      <input type="file" id="file-input" accept=".txt" onchange="handleFileSelect(event)">
+    </div>
+
+    <div id="analysis-output"></div>
+    </div><!-- /.page-wrap -->
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ HOW-TO -->
+  <div id="tab-howto" class="tab-content">
+    <div class="page-wrap">
+    <div class="section-title">How To Run SnowTrace</div>
+
+      <div class="card">
+        <div class="card-title"><svg height="18px" viewBox="0 -960 960 960" width="24px" fill="#F8F8FF"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm320-320v240h240v-240H520Zm0-80h240v-240H520v240Zm-80 0v-240H200v240h240Zm0 80H200v240h240v-240Z"/></svg>
+          Windows — Step by Step</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Download the Script</div>
+              <div class="step-desc">Go to the <strong style="color:var(--cyan)">Download</strong> tab and click
+                <em>Download snowtrace_windows.ps1</em>. Save it somewhere accessible (e.g. Desktop or <code>C:\Temp</code>).</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Open PowerShell as Administrator</div>
+              <div class="step-desc">Press <code>Win + X</code> → <em>Windows PowerShell (Admin)</em> or
+                <em>Terminal (Admin)</em>. Administrator is required for security events, registry data, and driver info.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Navigate to Script Location</div>
+              <div class="step-desc">
+                <div class="code-block">cd C:\Temp<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Execute the Script</div>
+              <div class="step-desc">
+                <div class="code-block">powershell -ExecutionPolicy Bypass -File snowtrace_windows.ps1<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+                Takes approximately 1–3 minutes. Progress is printed to the terminal.
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Locate the Output File</div>
+              <div class="step-desc">Report is saved in the same folder:<br>
+                <code>snowtrace_windows_HOSTNAME_20240115_103045.txt</code>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">6</div>
+            <div class="step-body">
+              <div class="step-title">Upload for Analysis</div>
+              <div class="step-desc">Drag the <code>.txt</code> file into the
+                <strong style="color:var(--cyan)">Analyze</strong> tab above.</div>
+            </div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="alert-warn">⚠ If you see "running scripts is disabled", use
+          <code>Set-ExecutionPolicy Bypass -Scope Process</code> first, or use the
+          <code>-ExecutionPolicy Bypass</code> flag shown above.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><svg height="18px" viewBox="0 -960 960 960" width="24px" fill="#F8F8FF"><path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z"/></svg>
+          Linux — Step by Step</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Download the Script</div>
+              <div class="step-desc">Go to the <strong style="color:var(--cyan)">Download</strong> tab and download
+                <em>snowtrace_linux.sh</em>. Transfer it to the target Linux system via SCP, USB, or any available method.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Make it Executable</div>
+              <div class="step-desc">
+                <div class="code-block">chmod +x snowtrace_linux.sh<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Run with sudo (Recommended)</div>
+              <div class="step-desc">
+                <div class="code-block">sudo bash snowtrace_linux.sh<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+                Running as root enables full access to auth logs, /etc/shadow, all user crontabs, and process paths.
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Locate the Output File</div>
+              <div class="step-desc">Output saved in current directory:<br>
+                <code>snowtrace_linux_hostname_20240115_103045.txt</code>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Transfer &amp; Analyze</div>
+              <div class="step-desc">Copy the report to your analysis machine:
+                <div class="code-block">scp user@target:/path/snowtrace_linux_*.txt .<button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+                Then upload in the <strong style="color:var(--cyan)">Analyze</strong> tab.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="alert-info">💡 Tip: If the target has no internet access, use a USB drive or SCP to move
+          the script and output file. The script has no external dependencies.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Severity Level Guide</div>
+        <table>
+          <thead>
+            <tr><th>Level</th><th>Color</th><th>Meaning</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pill pill-r">CRITICAL</span></td><td style="color:var(--red)">Red</td><td>Strong active compromise indicator</td><td>Isolate and investigate immediately</td></tr>
+            <tr><td><span class="pill pill-o">HIGH</span></td><td style="color:var(--orange)">Orange</td><td>Highly suspicious artifact</td><td>Investigate within hours</td></tr>
+            <tr><td><span class="pill pill-y">MEDIUM</span></td><td style="color:var(--yellow)">Yellow</td><td>Unusual but may be legitimate</td><td>Review and confirm context</td></tr>
+            <tr><td><span class="pill pill-g">LOW</span></td><td style="color:var(--blue)">Blue</td><td>Informational or low-confidence flag</td><td>Document and monitor</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div><!-- /.page-wrap -->
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ REMEDIATION -->
+  <div id="tab-remediation" class="tab-content">
+    <div class="page-wrap">
+    <div class="section-title">Remediation Playbooks</div>
+    <div class="alert-warn" style="margin-bottom:20px">
+      ⚠ Always preserve forensic evidence before remediating. Take a memory dump and disk image first
+      where possible. Document every action taken.
+    </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🔴</div>
+          <div class="rem-title">Suspicious Process Running from Temp/AppData</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Capture the full process path and command line before killing:
+              <code>Get-WmiObject Win32_Process -Filter "ProcessId=PID" | Select-Object *</code></div>
+            <div class="rem-step">Check the process's parent PID to understand the execution chain.</div>
+            <div class="rem-step">Hash the executable:
+              <code>Get-FileHash -Algorithm SHA256 "path\to\file.exe"</code> and check against VirusTotal.</div>
+            <div class="rem-step">Kill the process: <code>Stop-Process -Id PID -Force</code></div>
+            <div class="rem-step">Delete the malicious binary after preserving a copy for forensics.</div>
+            <div class="rem-step">Search for additional copies:
+              <code>Get-ChildItem -Recurse -Filter "malware.exe" C:\</code></div>
+            <div class="rem-step">Check all persistence locations (registry, scheduled tasks, services) for references to the same path.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🔴</div>
+          <div class="rem-title">Malicious Persistence (Registry / Scheduled Task / Cron)</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step"><strong>Windows Registry:</strong> Open <code>regedit</code>, navigate to the flagged run key, delete the malicious entry. Document the full value before deletion.</div>
+            <div class="rem-step"><strong>Scheduled Tasks:</strong> <code>Unregister-ScheduledTask -TaskName "BadTask" -Confirm:$false</code></div>
+            <div class="rem-step"><strong>Malicious Service:</strong> <code>sc stop BadService &amp;&amp; sc delete BadService</code> — verify PathName is removed from disk too.</div>
+            <div class="rem-step"><strong>WMI Subscription:</strong> <code>Get-WMIObject -Namespace root\subscription -Class __EventFilter | Where Name -eq "BadFilter" | Remove-WmiObject</code></div>
+            <div class="rem-step"><strong>Linux Cron:</strong> Edit with <code>crontab -e</code> (or <code>crontab -u user -e</code>) and remove suspicious entries. Also check <code>/etc/cron.d/</code>.</div>
+            <div class="rem-step"><strong>Systemd service:</strong> <code>systemctl stop bad.service &amp;&amp; systemctl disable bad.service &amp;&amp; rm /etc/systemd/system/bad.service &amp;&amp; systemctl daemon-reload</code></div>
+            <div class="rem-step">After cleanup, reboot and re-run SnowTrace to confirm the persistence is gone.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🔴</div>
+          <div class="rem-title">Unauthorized SSH Key / User Account</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Immediately lock suspicious accounts: <code>usermod -L username</code> (Linux) or
+              <code>Disable-LocalUser -Name "username"</code> (Windows).</div>
+            <div class="rem-step">Review <code>~/.ssh/authorized_keys</code> for all users. Remove any keys not recognized by your team.</div>
+            <div class="rem-step">Check if the attacker added themselves to sudoers: <code>cat /etc/sudoers</code> and
+              <code>ls /etc/sudoers.d/</code>.</div>
+            <div class="rem-step">Rotate SSH host keys: <code>rm /etc/ssh/ssh_host_*; ssh-keygen -A</code> and restart sshd.</div>
+            <div class="rem-step">Force all users to change passwords: <code>chage -d 0 username</code> (Linux) or via Active Directory.</div>
+            <div class="rem-step">Review all sessions active during the breach window using <code>last</code> and <code>who /log</code>.</div>
+            <div class="rem-step">Delete unauthorized user accounts after preserving their home directory for forensics.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🟠</div>
+          <div class="rem-title">Malicious Network Connection / C2 Communication</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Immediately isolate the machine from the network (unplug cable or disable Wi-Fi) to stop ongoing exfiltration.</div>
+            <div class="rem-step">Capture a network packet dump first if possible: <code>tcpdump -i any -w capture.pcap</code></div>
+            <div class="rem-step">Identify the process owning the suspicious connection and kill it.</div>
+            <div class="rem-step">Block the remote IP at the firewall:
+              <code>New-NetFirewallRule -Direction Outbound -Action Block -RemoteAddress x.x.x.x</code> (Windows) or
+              <code>iptables -A OUTPUT -d x.x.x.x -j DROP</code> (Linux).</div>
+            <div class="rem-step">Submit the remote IP and downloaded files to threat intelligence feeds (AbuseIPDB, VirusTotal).</div>
+            <div class="rem-step">Check DNS cache for C2 domains and block them at your DNS resolver or hosts file.</div>
+            <div class="rem-step">Review all outbound connections from the past 30 days in firewall logs for the same destination.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🟠</div>
+          <div class="rem-title">PowerShell / Bash History with Malicious Commands</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Preserve the history file as evidence before any cleanup.</div>
+            <div class="rem-step">Decode encoded PowerShell:
+              <code>[System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('BASE64HERE'))</code></div>
+            <div class="rem-step">Trace any downloaded files — check the download path and delete/quarantine payloads.</div>
+            <div class="rem-step">Check if <code>certutil</code> or <code>bitsadmin</code> was used to download files — look in temp paths for staged payloads.</div>
+            <div class="rem-step">Review PowerShell Script Block Logs in Event Viewer:
+              <em>Applications and Services Logs → Microsoft → Windows → PowerShell → Operational</em></div>
+            <div class="rem-step">Enable PowerShell logging going forward via Group Policy: Script Block Logging and Module Logging.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🟠</div>
+          <div class="rem-title">SUID/SGID File in Unexpected Location</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Compare against your baseline — is this file expected? Check:
+              <code>dpkg -S /path/to/file</code> or <code>rpm -qf /path/to/file</code>.</div>
+            <div class="rem-step">Hash the file and compare against the vendor's known-good hash.</div>
+            <div class="rem-step">Remove the SUID bit: <code>chmod u-s /path/to/file</code></div>
+            <div class="rem-step">If the file is not from a legitimate package, quarantine and delete it.</div>
+            <div class="rem-step">Check if the file was recently modified: <code>stat /path/to/file</code></div>
+            <div class="rem-step">Audit who has executed this file using audit logs: <code>ausearch -f /path/to/file</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🟡</div>
+          <div class="rem-title">Brute Force / Failed Login Attempts</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step">Identify the source IP(s) of failed login attempts from auth logs.</div>
+            <div class="rem-step">Block attacker IPs at the perimeter firewall and via fail2ban if configured.</div>
+            <div class="rem-step">Check if any failed usernames actually succeeded — look for 4624 (Windows) or
+              "Accepted password" (Linux) events from the same IP.</div>
+            <div class="rem-step">Change passwords for all targeted accounts immediately.</div>
+            <div class="rem-step">Enable account lockout policy: lock after 5 failed attempts with a 30-minute lockout.</div>
+            <div class="rem-step">Restrict SSH to key-based auth only: set
+              <code>PasswordAuthentication no</code> in <code>/etc/ssh/sshd_config</code>.</div>
+            <div class="rem-step">Consider port knocking or moving SSH to a non-standard port as a defense-in-depth measure.</div>
+            <div class="rem-step">Enable Multi-Factor Authentication (MFA) on all internet-facing services.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-section">
+        <div class="rem-header" onclick="toggleRem(this)">
+          <div class="rem-icon">🔵</div>
+          <div class="rem-title">General Post-Incident Hardening</div>
+          <div class="rem-arrow">▶</div>
+        </div>
+        <div class="rem-body">
+          <div class="rem-steps">
+            <div class="rem-step"><strong>Patch:</strong> Apply all OS and application patches. Most initial access exploits known vulnerabilities.</div>
+            <div class="rem-step"><strong>Passwords:</strong> Reset ALL passwords on the compromised system, including service accounts and any accounts that authenticated to this machine.</div>
+            <div class="rem-step"><strong>Secrets:</strong> Rotate any API keys, certificates, or credentials that may have been exposed.</div>
+            <div class="rem-step"><strong>Logging:</strong> Enable enhanced logging — Windows Event Forwarding, Sysmon (Windows), auditd (Linux), and centralized SIEM collection.</div>
+            <div class="rem-step"><strong>Backups:</strong> Verify backup integrity and ensure backups are offline/immutable and not accessible from the compromised host.</div>
+            <div class="rem-step"><strong>EDR:</strong> Deploy an Endpoint Detection and Response solution if not already present.</div>
+            <div class="rem-step"><strong>MFA:</strong> Enable multi-factor authentication on all administrative interfaces, VPN, email, and cloud services.</div>
+            <div class="rem-step"><strong>Least Privilege:</strong> Review and reduce admin accounts. Apply principle of least privilege across all accounts.</div>
+            <div class="rem-step"><strong>Network Segmentation:</strong> Isolate critical systems. Implement zero-trust network architecture.</div>
+            <div class="rem-step"><strong>Re-image:</strong> For serious compromises, re-image from a known-good baseline. Trust is lost once an attacker has root/SYSTEM.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.page-wrap -->
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ ABOUT -->
+  <div id="tab-about" class="tab-content">
+    <div class="page-wrap">
+      <div class="section-title">About SnowTrace</div>
+
+      <!-- Hero banner -->
+      <div class="card" style="text-align:center;padding:40px 24px 32px">
+        <div style="font-family:monospace;font-size:clamp(18px,3vw,32px);color:var(--green);letter-spacing:4px;font-weight:700;margin-bottom:6px">SNOWTRACE</div>
+        <div style="color:var(--cyan);font-size:13px;letter-spacing:3px;text-transform:uppercase;margin-bottom:20px">Cyber Triage Platform · v1.0</div>
+        <div style="color:var(--text2);max-width:620px;margin:0 auto;line-height:1.7;font-size:14px">
+          SnowTrace is an open-source incident response and compromise assessment toolkit designed for
+          security practitioners, SOC analysts, and IT responders who need fast, reliable forensic
+          visibility into a live system — without standing up additional infrastructure.
+        </div>
+      </div>
+
+      <div class="grid-2">
+
+        <!-- Mission -->
+        <div class="card">
+          <div class="card-title">Mission</div>
+          <ul class="feature-list">
+            <li>Deliver actionable compromise intelligence in under 3 minutes</li>
+            <li>Require zero dependencies on the target machine</li>
+            <li>Keep all analysis 100% local — no cloud, no telemetry</li>
+            <li>Surface evidence, not noise — severity-ranked findings only</li>
+            <li>Be the first tool an IR responder reaches for</li>
+          </ul>
+        </div>
+
+        <!-- Capabilities -->
+        <div class="card">
+          <div class="card-title">Capabilities at a Glance</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+            <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:22px;font-weight:700;color:var(--green)">15+</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">Check Categories</div>
+            </div>
+            <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:22px;font-weight:700;color:var(--cyan)">60+</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">IOC Detection Rules</div>
+            </div>
+            <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:22px;font-weight:700;color:var(--yellow)">2</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">Platforms (Win / Linux)</div>
+            </div>
+            <div style="background:var(--bg3);border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:22px;font-weight:700;color:var(--orange)">4</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">Severity Levels</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Built by -->
+      <div class="card">
+        <div class="card-title">Built By</div>
+        <div style="display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap">
+          <div style="background:var(--bg3);border:1px solid var(--green);border-radius:10px;padding:20px 28px;min-width:160px;text-align:center;flex-shrink:0">
+            <div style="font-size:36px;font-weight:800;color:var(--green);font-family:monospace;letter-spacing:2px">AP</div>
+            <div style="color:var(--cyan);font-size:12px;margin-top:6px;letter-spacing:1px">AGENT P</div>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <div style="color:var(--text1);font-size:16px;font-weight:600;margin-bottom:8px">Agent P</div>
+            <div style="color:var(--text2);font-size:13px;line-height:1.75">
+              Security researcher and IR practitioner with a focus on building practical, no-bloat defensive
+              tooling. Agent P created SnowTrace out of frustration with slow, network-dependent triage
+              workflows — the goal was a single script that runs anywhere and a dashboard that helps you
+              understand what it found in seconds, not hours.
+            </div>
+            <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+              <span class="tag tag-win">Threat Intelligence</span>
+              <span class="tag tag-lin">Incident Response</span>
+              <span class="tag" style="background:rgba(255,200,0,.12);color:var(--yellow);border:1px solid var(--yellow)">Forensics</span>
+              <span class="tag" style="background:rgba(180,100,255,.12);color:#c084fc;border:1px solid #c084fc">Tool Development</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tech stack -->
+      <div class="card">
+        <div class="card-title">How It Is Built</div>
+        <div class="grid-2" style="gap:12px;margin-top:4px">
+          <div>
+            <div style="color:var(--green);font-size:12px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Collection Scripts</div>
+            <ul class="feature-list">
+              <li><strong>PowerShell 5+</strong> — Windows investigation script; no modules required</li>
+              <li><strong>Bash</strong> — Linux/macOS script; POSIX-compatible, tested on Ubuntu, Debian, CentOS, RHEL</li>
+              <li>Structured <code>[SECTION]...[/SECTION]</code> output format for deterministic parsing</li>
+            </ul>
+          </div>
+          <div>
+            <div style="color:var(--cyan);font-size:12px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Dashboard</div>
+            <ul class="feature-list">
+              <li><strong>Pure HTML / CSS / JS</strong> — zero frameworks, zero dependencies</li>
+              <li>FileReader API — report parsing happens entirely in the browser</li>
+              <li>Blob URL download — scripts embedded and served client-side</li>
+              <li>60+ regex-based IOC rules evaluated in-memory</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Disclaimer -->
+      <div class="alert-warn" style="margin-bottom:0">
+        <strong>Legal Disclaimer:</strong> SnowTrace is designed exclusively for <strong>authorized</strong>
+        incident response, defensive security assessment, and forensic investigation on systems you own
+        or have explicit written permission to examine. Unauthorized use against systems you do not own
+        is illegal. The authors accept no liability for misuse. All analysis performed by the dashboard
+        runs locally in your browser — no data is transmitted to any external server.
+      </div>
+
+    </div><!-- /.page-wrap -->
+  </div>
+
+</main>
+
+<footer>
+  <div class="footer-status">
+    <div class="pulse"></div>
+    <span>SnowTrace — Cyber Triage Platform</span>
+  </div>
+  <span>by Agent P · All analysis is local · No data leaves your browser</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
