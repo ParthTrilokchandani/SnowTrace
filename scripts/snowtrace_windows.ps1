@@ -3,11 +3,9 @@
 .SYNOPSIS
     SnowTrace - Windows Compromise Investigation Script
     By Agent P | Version 1.0
-
 .DESCRIPTION
     Collects forensic artifacts for incident response and compromise assessment.
-    For complete results, run as Administrator in an elevated PowerShell session.
-
+    Run as Administrator for complete results.
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File snowtrace_windows.ps1
 #>
@@ -18,33 +16,18 @@ $hostname   = $env:COMPUTERNAME
 $username   = $env:USERNAME
 $outputFile = "snowtrace_windows_${hostname}_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
 
-# ── Banner ────────────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "  ███████╗███╗   ██╗ ██████╗ ██╗    ██╗████████╗██████╗  █████╗  ██████╗███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔════╝████╗  ██║██╔═══██╗██║    ██║╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝" -ForegroundColor Cyan
-Write-Host "  ███████╗██╔██╗ ██║██║   ██║██║ █╗ ██║   ██║   ██████╔╝███████║██║     █████╗  " -ForegroundColor Cyan
-Write-Host "  ╚════██║██║╚██╗██║██║   ██║██║███╗██║   ██║   ██╔══██╗██╔══██║██║     ██╔══╝  " -ForegroundColor Cyan
-Write-Host "  ███████║██║ ╚████║╚██████╔╝╚███╔███╔╝   ██║   ██║  ██║██║  ██║╚██████╗███████╗" -ForegroundColor Cyan
-Write-Host "  ╚══════╝╚═╝  ╚═══╝ ╚═════╝  ╚══╝╚══╝    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝" -ForegroundColor Cyan
-Write-Host "  Windows Compromise Investigation | By Agent P" -ForegroundColor DarkCyan
-Write-Host ""
-
-function Write-Log  { param($m) Write-Host "  [>] $m" -ForegroundColor Green }
-function Write-Warn { param($m) Write-Host "  [!] $m" -ForegroundColor Yellow }
-function Write-Err  { param($m) Write-Host "  [X] $m" -ForegroundColor Red }
+Write-Host "  SnowTrace | Windows Investigation | By Agent P" -ForegroundColor Cyan
+Write-Host "  Output: $outputFile" -ForegroundColor Green
 
 function Write-Section {
     param([string]$Name, [string]$Content)
-    $section = "`r`n[${Name}]`r`n${Content}`r`n[/${Name}]"
-    Add-Content -Path $outputFile -Value $section -Encoding UTF8
+    Add-Content -Path $outputFile -Value "`r`n[${Name}]`r`n${Content}`r`n[/${Name}]" -Encoding UTF8
 }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) { Write-Warn "Not running as Administrator - some checks will be limited" }
-
-# ── Report Header ─────────────────────────────────────────────────────────────
 $os = Get-WmiObject -Class Win32_OperatingSystem
-$header = @"
+
+Set-Content -Path $outputFile -Value @"
 === SNOWTRACE INVESTIGATION REPORT ===
 Tool: SnowTrace by Agent P
 Version: 1.0
@@ -58,436 +41,172 @@ OSVersion: $($os.Version)
 Architecture: $($os.OSArchitecture)
 LastBoot: $($os.ConvertToDateTime($os.LastBootUpTime))
 PSVersion: $($PSVersionTable.PSVersion)
-"@
-Set-Content -Path $outputFile -Value $header -Encoding UTF8
-Write-Log "Output file: $outputFile"
-Write-Host ""
+"@ -Encoding UTF8
 
-# ── 1. SYSTEM INFORMATION ─────────────────────────────────────────────────────
-Write-Log "Collecting system information..."
-$sysInfo = @"
---- Computer Info ---
-$((Get-WmiObject Win32_ComputerSystem | Select-Object Name, Domain, Manufacturer, Model, TotalPhysicalMemory | Format-List | Out-String).Trim())
+Write-Host "  [1/22] System Info..." -ForegroundColor DarkCyan
+Write-Section "SYSTEM_INFO" (Get-WmiObject Win32_ComputerSystem | Select-Object Name, Domain, Manufacturer, Model | Format-List | Out-String)
 
---- OS Details ---
-$((Get-WmiObject Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture, InstallDate, LastBootUpTime | Format-List | Out-String).Trim())
+Write-Host "  [2/22] Processes..." -ForegroundColor DarkCyan
+$procs = Get-WmiObject Win32_Process | ForEach-Object {
+    $sig = if ($_.ExecutablePath) { try { (Get-AuthenticodeSignature $_.ExecutablePath -EA SilentlyContinue).Status } catch {} }
+    [PSCustomObject]@{ PID=$_.ProcessId; PPID=$_.ParentProcessId; Name=$_.Name; Path=$_.ExecutablePath; CmdLine=if($_.CommandLine){$_.CommandLine.Substring(0,[Math]::Min(100,$_.CommandLine.Length))}else{""}; User=$_.GetOwner().User; Signature=$sig }
+} | Format-Table -AutoSize | Out-String
+Write-Section "RUNNING_PROCESSES" $procs
 
---- Timezone ---
-$((Get-TimeZone | Format-List | Out-String).Trim())
-
---- Environment Variables ---
-$((Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize | Out-String).Trim())
-"@
-Write-Section "SYSTEM_INFO" $sysInfo
-
-# ── 2. RUNNING PROCESSES ──────────────────────────────────────────────────────
-Write-Log "Collecting running processes..."
-$processes = Get-WmiObject Win32_Process | ForEach-Object {
-    $proc = $_
-    $psProc = Get-Process -Id $proc.ProcessId -EA SilentlyContinue
-    $sig = $null
-    if ($proc.ExecutablePath) {
-        try { $sig = (Get-AuthenticodeSignature $proc.ExecutablePath -EA SilentlyContinue).Status } catch {}
-    }
-    [PSCustomObject]@{
-        PID       = $proc.ProcessId
-        PPID      = $proc.ParentProcessId
-        Name      = $proc.Name
-        Path      = $proc.ExecutablePath
-        CmdLine   = if ($proc.CommandLine) { $proc.CommandLine.Substring(0, [Math]::Min(120, $proc.CommandLine.Length)) } else { "" }
-        User      = $proc.GetOwner().User
-        Signature = $sig
-        CPU_s     = if ($psProc) { [math]::Round($psProc.CPU, 2) } else { 0 }
-        Mem_MB    = [math]::Round($proc.WorkingSetSize / 1MB, 2)
-        StartTime = $proc.CreationDate
-    }
-} | Sort-Object CPU_s -Descending | Format-Table -AutoSize -Wrap | Out-String
-Write-Section "RUNNING_PROCESSES" $processes
-
-# ── 3. NETWORK CONNECTIONS ────────────────────────────────────────────────────
-Write-Log "Collecting network connections..."
-$netData = @"
---- Active TCP Connections ---
-$((Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess,
-    @{N='ProcessName';E={(Get-Process -Id $_.OwningProcess -EA SilentlyContinue).ProcessName}} |
-    Sort-Object State, LocalPort | Format-Table -AutoSize | Out-String).Trim())
-
+Write-Host "  [3/22] Network..." -ForegroundColor DarkCyan
+Write-Section "NETWORK_CONNECTIONS" @"
+--- TCP Connections ---
+$(Get-NetTCPConnection | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess,@{N='ProcessName';E={(Get-Process -Id $_.OwningProcess -EA SilentlyContinue).ProcessName}} | Sort-Object State | Format-Table -AutoSize | Out-String)
 --- UDP Endpoints ---
-$((Get-NetUDPEndpoint | Select-Object LocalAddress, LocalPort, OwningProcess,
-    @{N='ProcessName';E={(Get-Process -Id $_.OwningProcess -EA SilentlyContinue).ProcessName}} |
-    Format-Table -AutoSize | Out-String).Trim())
-
---- IP Configuration ---
-$((Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress, PrefixLength, AddressFamily | Format-Table -AutoSize | Out-String).Trim())
-
+$(Get-NetUDPEndpoint | Select-Object LocalAddress,LocalPort,OwningProcess,@{N='ProcessName';E={(Get-Process -Id $_.OwningProcess -EA SilentlyContinue).ProcessName}} | Format-Table -AutoSize | Out-String)
 --- DNS Servers ---
-$((Get-DnsClientServerAddress | Select-Object InterfaceAlias, ServerAddresses | Format-Table -AutoSize | Out-String).Trim())
-
---- HOSTS File ---
-$(Get-Content "$env:SystemRoot\System32\drivers\etc\hosts" -EA SilentlyContinue | Where-Object { $_ -notmatch "^#" -and $_.Trim() -ne "" } | Out-String)
+$(Get-DnsClientServerAddress | Select-Object InterfaceAlias,ServerAddresses | Format-Table -AutoSize | Out-String)
+--- Hosts File ---
+$(Get-Content "$env:SystemRootSystem32driversetchosts" | Where-Object {$_ -notmatch "^#" -and $_.Trim() -ne ""})
 "@
-Write-Section "NETWORK_CONNECTIONS" $netData
 
-# ── 4. DNS CACHE ──────────────────────────────────────────────────────────────
-Write-Log "Collecting DNS cache..."
-$dnsCache = (Get-DnsClientCache | Select-Object Entry, RecordName, RecordType, Status, TimeToLive | Format-Table -AutoSize | Out-String).Trim()
-Write-Section "DNS_CACHE" $dnsCache
+Write-Host "  [4/22] DNS Cache..." -ForegroundColor DarkCyan
+Write-Section "DNS_CACHE" (Get-DnsClientCache | Select-Object Entry,RecordName,RecordType,Status,TimeToLive | Format-Table -AutoSize | Out-String)
 
-# ── 5. SCHEDULED TASKS ────────────────────────────────────────────────────────
-Write-Log "Collecting scheduled tasks..."
-$tasks = Get-ScheduledTask | ForEach-Object {
-    $t = $_
-    $info = $t | Get-ScheduledTaskInfo -EA SilentlyContinue
-    $actions = ($t.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() }) -join " | "
-    [PSCustomObject]@{
-        Name       = $t.TaskName
-        Path       = $t.TaskPath
-        State      = $t.State
-        Author     = $t.Author
-        LastRun    = if ($info) { $info.LastRunTime } else { "" }
-        NextRun    = if ($info) { $info.NextRunTime } else { "" }
-        Actions    = $actions
-    }
-} | Format-Table -AutoSize -Wrap | Out-String
-Write-Section "SCHEDULED_TASKS" $tasks
+Write-Host "  [5/22] Scheduled Tasks..." -ForegroundColor DarkCyan
+Write-Section "SCHEDULED_TASKS" (Get-ScheduledTask | ForEach-Object { [PSCustomObject]@{Name=$_.TaskName;Path=$_.TaskPath;State=$_.State;Author=$_.Author;Actions=(($_.Actions | ForEach-Object {"$($_.Execute) $($_.Arguments)"}) -join " | ")} } | Format-Table -AutoSize | Out-String)
 
-# ── 6. WINDOWS SERVICES ───────────────────────────────────────────────────────
-Write-Log "Collecting services..."
-$services = (Get-WmiObject Win32_Service | Select-Object Name, DisplayName, State, StartMode, PathName, StartName |
-    Sort-Object State, Name | Format-Table -AutoSize -Wrap | Out-String).Trim()
-Write-Section "SERVICES" $services
+Write-Host "  [6/22] Services..." -ForegroundColor DarkCyan
+Write-Section "SERVICES" (Get-WmiObject Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName,StartName | Sort-Object State,Name | Format-Table -AutoSize | Out-String)
 
-# ── 7. PERSISTENCE MECHANISMS ─────────────────────────────────────────────────
-Write-Log "Collecting persistence mechanisms..."
-$runKeys = @(
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
-    "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run",
-    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
-)
-$regRunOutput = foreach ($key in $runKeys) {
-    "  Key: $key"
-    if (Test-Path $key) {
-        $props = (Get-ItemProperty $key).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' }
-        if ($props) { $props | ForEach-Object { "    $($_.Name) = $($_.Value)" } }
-        else { "    (empty)" }
-    } else { "    (key not found)" }
-    ""
-}
-
-$wmiFilters    = Get-WMIObject -Namespace root\subscription -Class __EventFilter -EA SilentlyContinue
-$wmiConsumers  = Get-WMIObject -Namespace root\subscription -Class __EventConsumer -EA SilentlyContinue
-$ifeoPaths     = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options" -EA SilentlyContinue | ForEach-Object {
-    $d = (Get-ItemProperty $_.PSPath -Name Debugger -EA SilentlyContinue).Debugger
-    if ($d) { "  $($_.PSChildName) -> Debugger: $d" }
-}
-
-$persistData = @"
+Write-Host "  [7/22] Persistence..." -ForegroundColor DarkCyan
+$runKeys = @("HKLM:SOFTWAREMicrosoftWindowsCurrentVersionRun","HKLM:SOFTWAREMicrosoftWindowsCurrentVersionRunOnce","HKLM:SOFTWAREWow6432NodeMicrosoftWindowsCurrentVersionRun","HKCU:SOFTWAREMicrosoftWindowsCurrentVersionRun","HKCU:SOFTWAREMicrosoftWindowsCurrentVersionRunOnce")
+$regOut = foreach ($k in $runKeys) { "Key: $k"; if (Test-Path $k) { (Get-ItemProperty $k).PSObject.Properties | Where-Object {$_.Name -notmatch '^PS'} | ForEach-Object {"  $($_.Name) = $($_.Value)"} } }
+$wmiF = Get-WMIObject -Namespace rootsubscription -Class __EventFilter -EA SilentlyContinue
+$wmiC = Get-WMIObject -Namespace rootsubscription -Class __EventConsumer -EA SilentlyContinue
+$ifeo = Get-ChildItem "HKLM:SOFTWAREMicrosoftWindows NTCurrentVersionImage File Execution Options" -EA SilentlyContinue | ForEach-Object { $d=(Get-ItemProperty $_.PSPath -Name Debugger -EA SilentlyContinue).Debugger; if($d){"  $($_.PSChildName) -> Debugger: $d"} }
+Write-Section "PERSISTENCE" @"
 --- Registry Run Keys ---
-$($regRunOutput -join "`r`n")
-
---- Startup Folder (All Users) ---
-$((Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp" -EA SilentlyContinue | Select-Object Name, FullName, LastWriteTime | Format-Table | Out-String).Trim())
-
---- Startup Folder (Current User) ---
-$((Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup" -EA SilentlyContinue | Select-Object Name, FullName, LastWriteTime | Format-Table | Out-String).Trim())
-
---- Winlogon Values ---
-$((Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -EA SilentlyContinue | Select-Object Shell, Userinit, UserInitMprLogonScript | Format-List | Out-String).Trim())
-
+$($regOut -join "`r`n")
+--- Winlogon ---
+$(Get-ItemProperty "HKLM:SOFTWAREMicrosoftWindows NTCurrentVersionWinlogon" -EA SilentlyContinue | Select-Object Shell,Userinit | Format-List | Out-String)
 --- AppInit_DLLs ---
-$((Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" -Name AppInit_DLLs -EA SilentlyContinue).AppInit_DLLs)
-
+$((Get-ItemProperty "HKLM:SOFTWAREMicrosoftWindows NTCurrentVersionWindows" -Name AppInit_DLLs -EA SilentlyContinue).AppInit_DLLs)
 --- Image File Execution Options (Debuggers) ---
-$(if ($ifeoPaths) { $ifeoPaths -join "`r`n" } else { "  (none)" })
-
+$(if ($ifeo) { $ifeo -join "`r`n" } else { "(none)" })
 --- WMI Event Filters ---
-$(if ($wmiFilters) { $wmiFilters | Select-Object Name, Query | Format-Table | Out-String } else { "  (none)" })
-
+$(if ($wmiF) { $wmiF | Select-Object Name,Query | Format-Table | Out-String } else { "(none)" })
 --- WMI Event Consumers ---
-$(if ($wmiConsumers) { $wmiConsumers | Select-Object Name, ScriptText, CommandLineTemplate | Format-Table | Out-String } else { "  (none)" })
-
---- LSA Security/Authentication/Notification Packages ---
-$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -EA SilentlyContinue |
-    Select-Object SecurityPackages, AuthenticationPackages, NotificationPackages | Format-List | Out-String).Trim())
-
---- LSASS RunAsPPL (Credential Guard indicator) ---
-$(
-    $ppl = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name RunAsPPL -EA SilentlyContinue).RunAsPPL
-    if ($ppl -eq 1) { "RunAsPPL = 1 (LSASS protected)" } elseif ($ppl -eq 0) { "RunAsPPL = 0 (LSASS NOT protected - credentials at risk)" } else { "RunAsPPL not set (LSASS NOT protected)" }
-)
-
---- Boot Execute ---
-$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name BootExecute -EA SilentlyContinue).BootExecute -join ", ")
-
---- Network Provider Order ---
-$((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" -EA SilentlyContinue).ProviderOrder)
-
---- Winlogon Notification Packages ---
-$((Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\Notify" -EA SilentlyContinue | ForEach-Object {
-    "$($_.PSChildName): $((Get-ItemProperty $_.PSPath -EA SilentlyContinue).DllName)"
-}) -join "`r`n")
+$(if ($wmiC) { $wmiC | Select-Object Name,ScriptText,CommandLineTemplate | Format-Table | Out-String } else { "(none)" })
 "@
-Write-Section "PERSISTENCE" $persistData
 
-# ── 8. USER ACCOUNTS ──────────────────────────────────────────────────────────
-Write-Log "Collecting user account information..."
-$userData = @"
+Write-Host "  [8/22] Users..." -ForegroundColor DarkCyan
+Write-Section "USER_ACCOUNTS" @"
 --- Local Users ---
-$((Get-LocalUser | Select-Object Name, Enabled, SID, LastLogon, PasswordLastSet, PasswordRequired | Format-Table -AutoSize | Out-String).Trim())
-
---- Local Groups ---
-$((Get-LocalGroup | Select-Object Name, SID, Description | Format-Table -AutoSize | Out-String).Trim())
-
---- Administrators Group Members ---
-$((Get-LocalGroupMember -Group "Administrators" -EA SilentlyContinue | Select-Object Name, SID, PrincipalSource | Format-Table -AutoSize | Out-String).Trim())
-
---- Remote Desktop Users ---
-$((Get-LocalGroupMember -Group "Remote Desktop Users" -EA SilentlyContinue | Select-Object Name, SID | Format-Table -AutoSize | Out-String).Trim())
+$(Get-LocalUser | Select-Object Name,Enabled,SID,LastLogon,PasswordLastSet | Format-Table -AutoSize | Out-String)
+--- Administrators ---
+$(Get-LocalGroupMember -Group "Administrators" -EA SilentlyContinue | Select-Object Name,SID,PrincipalSource | Format-Table | Out-String)
 "@
-Write-Section "USER_ACCOUNTS" $userData
 
-# ── 9. SECURITY EVENTS ────────────────────────────────────────────────────────
-Write-Log "Collecting security events (last 7 days)..."
+Write-Host "  [9/22] Security Events..." -ForegroundColor DarkCyan
 try {
-    $loginEvents = Get-WinEvent -FilterHashtable @{
-        LogName   = 'Security'
-        Id        = @(4624, 4625, 4648, 4720, 4726, 4728, 4732, 4756, 4672, 1102, 104)
-        StartTime = (Get-Date).AddDays(-7)
-    } -MaxEvents 300 -EA Stop | Select-Object TimeCreated, Id,
-        @{N='EventType';E={switch($_.Id){
-            4624{'[OK] Successful Login'}
-            4625{'[!!] FAILED Login'}
-            4648{'[>>] Explicit Credentials Used'}
-            4720{'[NEW] User Account Created'}
-            4726{'[DEL] User Account Deleted'}
-            4728{'[GRP] User Added to Global Group'}
-            4732{'[ADM] User Added to Administrators'}
-            4756{'[GRP] User Added to Universal Group'}
-            4672{'[PRIV] Special Privileges Assigned'}
-            1102{'[CLR] SECURITY LOG CLEARED'}
-            104{'[CLR]  SYSTEM LOG CLEARED'}
-        }}},
-        @{N='Details';E={
-            if ($_.Message) { $_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)) }
-        }} | Format-Table -AutoSize -Wrap | Out-String
-    Write-Section "SECURITY_EVENTS" $loginEvents
-} catch {
-    Write-Section "SECURITY_EVENTS" "Unable to read security events - requires Administrator privileges.`r`nError: $_"
-}
+    $evts = Get-WinEvent -FilterHashtable @{LogName='Security';Id=@(4624,4625,4648,4720,4726,4728,4732,4672);StartTime=(Get-Date).AddDays(-7)} -MaxEvents 200 -EA Stop |
+        Select-Object TimeCreated,Id,@{N='EventType';E={switch($_.Id){4624{'[OK] Successful Login'}4625{'[!!] FAILED Login'}4648{'[>>] Explicit Credentials'}4720{'[NEW] User Account Created'}4726{'[DEL] User Deleted'}4728{'[GRP] Added to Group'}4732{'[ADM] Added to Admins'}4672{'[PRIV] Special Privileges'}}}} |
+        Format-Table -AutoSize | Out-String
+    Write-Section "SECURITY_EVENTS" $evts
+} catch { Write-Section "SECURITY_EVENTS" "Requires Administrator privileges.`r`nError: $_" }
 
-# ── 10. POWERSHELL HISTORY & CONFIG ──────────────────────────────────────────
-Write-Log "Collecting PowerShell configuration and history..."
-$histPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
-$psHistory = if (Test-Path $histPath) {
-    Get-Content $histPath -Tail 300 | Out-String
-} else { "(no history file found)" }
-
-$psData = @"
+Write-Host "  [10/22] PowerShell..." -ForegroundColor DarkCyan
+$histFile = "$env:APPDATAMicrosoftWindowsPowerShellPSReadLineConsoleHost_history.txt"
+Write-Section "POWERSHELL_INFO" @"
 --- Execution Policy ---
-$((Get-ExecutionPolicy -List | Format-Table | Out-String).Trim())
-
---- Module Logging ---
-$((Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging" -EA SilentlyContinue | Format-List | Out-String).Trim())
-
---- Script Block Logging ---
-$((Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" -EA SilentlyContinue | Format-List | Out-String).Trim())
-
---- PowerShell History (last 300 lines) ---
-$psHistory
+$(Get-ExecutionPolicy -List | Format-Table | Out-String)
+--- History (last 200 commands) ---
+$(if (Test-Path $histFile) { Get-Content $histFile -Tail 200 | Out-String } else { "(not found)" })
 "@
-Write-Section "POWERSHELL_INFO" $psData
 
-# ── 11. RECENTLY MODIFIED FILES ───────────────────────────────────────────────
-Write-Log "Collecting recently modified files (last 7 days)..."
-$scanPaths = @(
-    $env:TEMP,
-    "$env:SystemRoot\Temp",
-    "$env:USERPROFILE\Downloads",
-    $env:APPDATA,
-    "$env:LOCALAPPDATA\Temp",
-    "$env:USERPROFILE\Documents"
-)
-$recentFiles = foreach ($p in $scanPaths) {
-    if (Test-Path $p) {
-        Get-ChildItem -Path $p -Recurse -File -EA SilentlyContinue |
-            Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-7) } |
-            Select-Object FullName, LastWriteTime, @{N='Size_KB';E={[math]::Round($_.Length/1KB,1)}} |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 25
-    }
+Write-Host "  [11/22] Recent Files..." -ForegroundColor DarkCyan
+$rf = foreach ($p in @($env:TEMP,"$env:SystemRootTemp","$env:USERPROFILEDownloads",$env:APPDATA)) {
+    if (Test-Path $p) { Get-ChildItem -Path $p -Recurse -File -EA SilentlyContinue | Where-Object {$_.LastWriteTime -gt (Get-Date).AddDays(-7)} | Select-Object FullName,LastWriteTime,@{N='KB';E={[math]::Round($_.Length/1KB,1)}} | Sort-Object LastWriteTime -Descending | Select-Object -First 20 }
 }
-Write-Section "RECENTLY_MODIFIED_FILES" ($recentFiles | Format-Table -AutoSize | Out-String)
+Write-Section "RECENTLY_MODIFIED_FILES" ($rf | Format-Table -AutoSize | Out-String)
 
-# ── 12. INSTALLED SOFTWARE ────────────────────────────────────────────────────
-Write-Log "Collecting installed software..."
-$software = @(
-    Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -EA SilentlyContinue
-    Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -EA SilentlyContinue
-    Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -EA SilentlyContinue
-) | Where-Object { $_.DisplayName } |
-    Select-Object DisplayName, Publisher, DisplayVersion, InstallDate |
-    Sort-Object InstallDate -Descending |
-    Format-Table -AutoSize | Out-String
-Write-Section "INSTALLED_SOFTWARE" $software
+Write-Host "  [12/22] Software..." -ForegroundColor DarkCyan
+Write-Section "INSTALLED_SOFTWARE" (@(Get-ItemProperty "HKLM:SoftwareMicrosoftWindowsCurrentVersionUninstall*" -EA SilentlyContinue; Get-ItemProperty "HKLM:SoftwareWow6432NodeMicrosoftWindowsCurrentVersionUninstall*" -EA SilentlyContinue) | Where-Object {$_.DisplayName} | Select-Object DisplayName,Publisher,DisplayVersion,InstallDate | Sort-Object InstallDate -Descending | Format-Table -AutoSize | Out-String)
 
-# ── 13. FIREWALL STATUS ───────────────────────────────────────────────────────
-Write-Log "Collecting firewall information..."
-$firewallData = @"
---- Firewall Profiles ---
-$((Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction | Format-Table | Out-String).Trim())
-
+Write-Host "  [13/22] Firewall..." -ForegroundColor DarkCyan
+Write-Section "FIREWALL_INFO" @"
+--- Profiles ---
+$(Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction | Format-Table | Out-String)
 --- Inbound Allow Rules ---
-$((Get-NetFirewallRule | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' } |
-    Select-Object DisplayName, LocalPort, RemoteAddress, Profile, Enabled | Format-Table -AutoSize | Out-String).Trim())
+$(Get-NetFirewallRule | Where-Object {$_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow'} | Select-Object DisplayName,LocalPort,RemoteAddress,Enabled | Format-Table -AutoSize | Out-String)
 "@
-Write-Section "FIREWALL_INFO" $firewallData
 
-# ── 14. WINDOWS DEFENDER ──────────────────────────────────────────────────────
-Write-Log "Collecting Windows Defender status..."
-$defStatus  = Get-MpComputerStatus -EA SilentlyContinue
-$defThreats = Get-MpThreatDetection -EA SilentlyContinue
-$defData = @"
---- Defender Status ---
-$(($defStatus | Select-Object AMServiceEnabled, AntispywareEnabled, AntivirusEnabled, RealTimeProtectionEnabled,
-    IoavProtectionEnabled, NISEnabled, OnAccessProtectionEnabled,
-    AntivirusSignatureLastUpdated, QuickScanStartTime, FullScanStartTime | Format-List | Out-String).Trim())
-
---- Recent Threat Detections ---
-$(if ($defThreats) { $defThreats | Select-Object -First 20 | Format-Table | Out-String } else { "No threats recorded" })
+Write-Host "  [14/22] Defender..." -ForegroundColor DarkCyan
+Write-Section "DEFENDER_STATUS" @"
+--- Status ---
+$(Get-MpComputerStatus -EA SilentlyContinue | Select-Object AMServiceEnabled,AntispywareEnabled,AntivirusEnabled,RealTimeProtectionEnabled,IoavProtectionEnabled,AntivirusSignatureLastUpdated | Format-List | Out-String)
+--- Recent Detections ---
+$(Get-MpThreatDetection -EA SilentlyContinue | Select-Object -First 10 | Format-Table | Out-String)
 "@
-Write-Section "DEFENDER_STATUS" $defData
 
-# ── 15. LOADED DRIVERS ────────────────────────────────────────────────────────
-Write-Log "Collecting loaded drivers..."
-$drivers = (Get-WmiObject Win32_SystemDriver |
-    Select-Object Name, DisplayName, State, PathName, ServiceType |
-    Sort-Object State | Format-Table -AutoSize -Wrap | Out-String).Trim()
-Write-Section "LOADED_DRIVERS" $drivers
-
-# ── 16. SUSPICIOUS INDICATORS SUMMARY ────────────────────────────────────────
-Write-Log "Running suspicious indicator checks..."
-$suspProcs = Get-WmiObject Win32_Process | Where-Object {
-    $_.ExecutablePath -match "\\temp\\|\\tmp\\|appdata\\local\\temp|\\windows\\temp|\\programdata\\" -or
-    ($_.ExecutablePath -eq $null -and $_.Name -notin @('System','Idle','Registry','smss.exe','csrss.exe','wininit.exe','services.exe','lsass.exe','winlogon.exe'))
-}
-$suspConnections = Get-NetTCPConnection | Where-Object {
-    $_.RemotePort -in @(4444,4445,1337,31337,8888,9090,9999,6667,6697,1234,5555,7777) -and
-    $_.State -eq 'Established'
-}
-$suspData = @"
---- Processes from Suspicious Locations ---
-$(if ($suspProcs) { $suspProcs | Select-Object ProcessId, Name, ExecutablePath, CommandLine | Format-Table -AutoSize | Out-String } else { "(none detected)" })
-
---- Connections to High-Risk Ports ---
-$(if ($suspConnections) { $suspConnections | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess | Format-Table | Out-String } else { "(none detected)" })
+Write-Host "  [15/22] Suspicious Checks..." -ForegroundColor DarkCyan
+$sp = Get-WmiObject Win32_Process | Where-Object { $_.ExecutablePath -match "\temp\|\tmp\|appdata\local\temp|\windows\temp" }
+$sc = Get-NetTCPConnection | Where-Object { $_.RemotePort -in @(4444,4445,1337,31337,8888,9090,6667,6697,1234,5555,7777) -and $_.State -eq 'Established' }
+Write-Section "SUSPICIOUS_INDICATORS" @"
+--- Processes from suspicious paths ---
+$(if ($sp) { $sp | Select-Object ProcessId,Name,ExecutablePath | Format-Table | Out-String } else { "(none)" })
+--- Connections to high-risk ports ---
+$(if ($sc) { $sc | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess | Format-Table | Out-String } else { "(none)" })
 "@
-Write-Section "SUSPICIOUS_INDICATORS" $suspData
 
-# ── 17. PREFETCH FILES ────────────────────────────────────────────────────────
-Write-Log "Collecting prefetch files..."
-$prefetchData = @"
---- Prefetch Files (last 50, sorted by last execution time) ---
-$((Get-ChildItem "$env:SystemRoot\Prefetch\*.pf" -EA SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 50 |
-    Select-Object Name, LastWriteTime, @{N='Size_KB';E={[math]::Round($_.Length/1KB,1)}} |
-    Format-Table -AutoSize | Out-String).Trim())
-"@
-Write-Section "PREFETCH_FILES" $prefetchData
+Write-Host "  [16/22] Prefetch files..." -ForegroundColor DarkCyan
+Write-Section "PREFETCH_FILES" (Get-ChildItem "$env:SystemRootPrefetch*.pf" -EA SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 50 | Select-Object Name,LastWriteTime | Format-Table -AutoSize | Out-String)
 
-# ── 18. SHADOW COPIES ─────────────────────────────────────────────────────────
-Write-Log "Collecting shadow copy status..."
-$vssOut  = (vssadmin list shadows 2>&1 | Out-String).Trim()
-$wrtOut  = (vssadmin list writers 2>&1 | Out-String).Trim()
-$shadowData = @"
---- Volume Shadow Copies ---
-$vssOut
+Write-Host "  [17/22] Shadow copies..." -ForegroundColor DarkCyan
+Write-Section "SHADOW_COPIES" (vssadmin list shadows 2>&1 | Out-String)
 
---- VSS Writers Status ---
-$wrtOut
-"@
-Write-Section "SHADOW_COPIES" $shadowData
-
-# ── 19. RDP ARTIFACTS ─────────────────────────────────────────────────────────
-Write-Log "Collecting RDP artifacts..."
-$rdpHistory = (Get-ChildItem "HKCU:\SOFTWARE\Microsoft\Terminal Server Client\Servers" -EA SilentlyContinue | ForEach-Object {
-    [PSCustomObject]@{
-        Server   = $_.PSChildName
-        Username = (Get-ItemProperty $_.PSPath -Name UsernameHint -EA SilentlyContinue).UsernameHint
-    }
-} | Format-Table -AutoSize | Out-String).Trim()
-
-$rdpEnabled = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections
-$rdpData = @"
---- RDP Service Status ---
-$(if ($rdpEnabled -eq 0) { "RDP ENABLED (fDenyTSConnections = 0)" } elseif ($rdpEnabled -eq 1) { "RDP Disabled (fDenyTSConnections = 1)" } else { "Unknown" })
-
---- RDP Client History (recently connected servers) ---
-$rdpHistory
-
+Write-Host "  [18/22] RDP artifacts..." -ForegroundColor DarkCyan
+$rdpE = (Get-ItemProperty "HKLM:SYSTEMCurrentControlSetControlTerminal Server" -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections
+Write-Section "RDP_ARTIFACTS" @"
+--- RDP Status ---
+$(if ($rdpE -eq 0) { "RDP ENABLED" } elseif ($rdpE -eq 1) { "RDP Disabled" } else { "Unknown" })
+--- Client History ---
+$((Get-ChildItem "HKCU:SOFTWAREMicrosoftTerminal Server ClientServers" -EA SilentlyContinue | ForEach-Object { [PSCustomObject]@{Server=$_.PSChildName;User=(Get-ItemProperty $_.PSPath -Name UsernameHint -EA SilentlyContinue).UsernameHint} } | Format-Table | Out-String).Trim())
 --- Active Sessions ---
 $((query session 2>&1 | Out-String).Trim())
 "@
-Write-Section "RDP_ARTIFACTS" $rdpData
 
-# ── 20. USB HISTORY ───────────────────────────────────────────────────────────
-Write-Log "Collecting USB/removable device history..."
-$usbDevices = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR" -EA SilentlyContinue | ForEach-Object {
-    $class = $_.PSChildName
-    Get-ChildItem $_.PSPath -EA SilentlyContinue | ForEach-Object {
-        [PSCustomObject]@{
-            DeviceClass  = $class
-            InstanceID   = $_.PSChildName
-            FriendlyName = (Get-ItemProperty $_.PSPath -Name FriendlyName -EA SilentlyContinue).FriendlyName
-        }
-    }
-} | Format-Table -AutoSize | Out-String
-Write-Section "USB_HISTORY" $usbDevices
+Write-Host "  [19/22] USB history..." -ForegroundColor DarkCyan
+Write-Section "USB_HISTORY" (Get-ChildItem "HKLM:SYSTEMCurrentControlSetEnumUSBSTOR" -EA SilentlyContinue | ForEach-Object { $c=$_.PSChildName; Get-ChildItem $_.PSPath -EA SilentlyContinue | ForEach-Object { [PSCustomObject]@{Class=$c;InstanceID=$_.PSChildName;Name=(Get-ItemProperty $_.PSPath -Name FriendlyName -EA SilentlyContinue).FriendlyName} } } | Format-Table -AutoSize | Out-String)
 
-# ── 21. NAMED PIPES ───────────────────────────────────────────────────────────
-Write-Log "Collecting named pipes..."
-$pipeList = try {
-    [System.IO.Directory]::GetFiles('\\.\pipe\') | Sort-Object | ForEach-Object { "  $_" }
-} catch { @("(Unable to enumerate - requires elevated context)") }
-Write-Section "NAMED_PIPES" ($pipeList | Out-String)
+Write-Host "  [20/22] Named pipes..." -ForegroundColor DarkCyan
+Write-Section "NAMED_PIPES" (try { [System.IO.Directory]::GetFiles('\.pipe') | Sort-Object | Out-String } catch { "(requires elevated context)" })
 
-# ── 22. BROWSER ARTIFACTS ─────────────────────────────────────────────────────
-Write-Log "Collecting browser artifacts..."
-$browserData = @"
---- Downloads Folder (last 30 days) ---
-$((Get-ChildItem "$env:USERPROFILE\Downloads" -Recurse -File -EA SilentlyContinue |
-    Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-30) } |
-    Select-Object Name, LastWriteTime, @{N='Size_KB';E={[math]::Round($_.Length/1KB,1)}} |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 30 |
-    Format-Table -AutoSize | Out-String).Trim())
-
---- Browser Profile Paths ---
-$(foreach ($p in @(
-    "$env:LOCALAPPDATA\Google\Chrome\User Data\Default",
-    "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default",
-    "$env:APPDATA\Mozilla\Firefox\Profiles"
-)) { if (Test-Path $p) { "EXISTS: $p" } else { "absent: $p" } })
-
---- Chrome Extensions ---
-$((Get-ChildItem "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions" -EA SilentlyContinue |
-    Select-Object Name, LastWriteTime | Format-Table -AutoSize | Out-String).Trim())
-
---- Edge Extensions ---
-$((Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Extensions" -EA SilentlyContinue |
-    Select-Object Name, LastWriteTime | Format-Table -AutoSize | Out-String).Trim())
+Write-Host "  [21/22] Persistence (extended)..." -ForegroundColor DarkCyan
+$ppl2 = (Get-ItemProperty "HKLM:SYSTEMCurrentControlSetControlLsa" -Name RunAsPPL -EA SilentlyContinue).RunAsPPL
+$wmiF2 = Get-WMIObject -Namespace rootsubscription -Class __EventFilter -EA SilentlyContinue
+$wmiC2 = Get-WMIObject -Namespace rootsubscription -Class __EventConsumer -EA SilentlyContinue
+Write-Section "PERSISTENCE" @"
+--- LSA Packages ---
+$((Get-ItemProperty "HKLM:SYSTEMCurrentControlSetControlLsa" -EA SilentlyContinue | Select-Object SecurityPackages,AuthenticationPackages,NotificationPackages | Format-List | Out-String).Trim())
+--- LSASS RunAsPPL ---
+$(if ($ppl2 -eq 1) { "RunAsPPL = 1 (LSASS protected)" } else { "RunAsPPL = $ppl2 (LSASS NOT protected)" })
+--- Boot Execute ---
+$((Get-ItemProperty "HKLM:SYSTEMCurrentControlSetControlSession Manager" -Name BootExecute -EA SilentlyContinue).BootExecute -join ", ")
+--- Network Provider Order ---
+$((Get-ItemProperty "HKLM:SYSTEMCurrentControlSetControlNetworkProviderOrder" -EA SilentlyContinue).ProviderOrder)
+--- WMI Filters ---
+$(if ($wmiF2) { $wmiF2 | Select-Object Name,Query | Format-Table | Out-String } else { "(none)" })
+--- WMI Consumers ---
+$(if ($wmiC2) { $wmiC2 | Select-Object Name,ScriptText,CommandLineTemplate | Format-Table | Out-String } else { "(none)" })
 "@
-Write-Section "BROWSER_ARTIFACTS" $browserData
 
-# ── Finalize ──────────────────────────────────────────────────────────────────
-$endTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-Add-Content -Path $outputFile -Value "`r`n=== INVESTIGATION COMPLETE ===" -Encoding UTF8
-Add-Content -Path $outputFile -Value "EndTime: $endTime" -Encoding UTF8
+Write-Host "  [22/22] Browser artifacts..." -ForegroundColor DarkCyan
+Write-Section "BROWSER_ARTIFACTS" @"
+--- Downloads (last 30 days) ---
+$((Get-ChildItem "$env:USERPROFILEDownloads" -Recurse -File -EA SilentlyContinue | Where-Object {$_.LastWriteTime -gt (Get-Date).AddDays(-30)} | Select-Object Name,LastWriteTime,@{N='KB';E={[math]::Round($_.Length/1KB,1)}} | Sort-Object LastWriteTime -Descending | Select-Object -First 30 | Format-Table -AutoSize | Out-String).Trim())
+--- Chrome Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATAGoogleChromeUser DataDefaultExtensions" -EA SilentlyContinue | Select-Object Name,LastWriteTime | Format-Table | Out-String).Trim())
+--- Edge Extensions ---
+$((Get-ChildItem "$env:LOCALAPPDATAMicrosoftEdgeUser DataDefaultExtensions" -EA SilentlyContinue | Select-Object Name,LastWriteTime | Format-Table | Out-String).Trim())
+"@
 
-Write-Host ""
-Write-Host "  ┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Green
-Write-Host "  │  SnowTrace Investigation COMPLETE                           │" -ForegroundColor Green
-Write-Host "  │  Report: $outputFile" -ForegroundColor Green
-Write-Host "  │  Upload this file to the SnowTrace Dashboard for analysis   │" -ForegroundColor Green
-Write-Host "  └─────────────────────────────────────────────────────────────┘" -ForegroundColor Green
-Write-Host ""
+Add-Content -Path $outputFile -Value "`r`n=== INVESTIGATION COMPLETE ===`r`nEndTime: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8
+Write-Host "`n  [DONE] Report: $outputFile" -ForegroundColor Green
+Write-Host "  Upload to SnowTrace Dashboard for analysis." -ForegroundColor Cyan
